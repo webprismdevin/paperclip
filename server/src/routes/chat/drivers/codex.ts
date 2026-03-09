@@ -6,7 +6,7 @@ export const codexDriver: ChatDriver = {
   label: "Codex",
 
   buildArgs(opts: ChatSpawnOpts): string[] {
-    const args = ["exec", "--json"];
+    const args = ["exec", "--json", "--dangerously-bypass-approvals-and-sandbox"];
     if (opts.model) {
       args.push("--model", opts.model);
     }
@@ -34,10 +34,29 @@ export const codexDriver: ChatDriver = {
     if (event.type === "item.completed" && event.item?.type === "agent_message") {
       const text = event.item.text ?? event.item.content?.[0]?.text;
       if (text) {
-        events.push({ type: "text", text });
+        // Prefix with double newline so consecutive agent_messages don't smash together
+        events.push({ type: "text", text: "\n\n" + text });
       }
     }
 
+    // command_execution: item.started = tool invocation, item.completed = tool result
+    if (event.type === "item.started" && event.item?.type === "command_execution") {
+      events.push({
+        type: "tool_use",
+        name: "shell",
+        input: event.item.command ?? "",
+      });
+    }
+
+    if (event.type === "item.completed" && event.item?.type === "command_execution") {
+      events.push({
+        type: "tool_result",
+        content: event.item.aggregated_output ?? "",
+        isError: event.item.status === "failed" || (event.item.exit_code != null && event.item.exit_code !== 0),
+      });
+    }
+
+    // function_call / function_call_output (API-style tool use)
     if (event.type === "item.completed" && event.item?.type === "function_call") {
       events.push({
         type: "tool_use",

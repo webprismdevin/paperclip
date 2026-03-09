@@ -34,15 +34,23 @@ export const openCodeDriver: ChatDriver = {
     }
 
     if (event.type === "tool_use") {
+      const toolName = event.part?.tool ?? event.part?.name ?? "tool";
+      const state = event.part?.state;
       events.push({
         type: "tool_use",
-        name: event.part?.name ?? "tool",
-        input: event.part?.input ?? event.part?.arguments,
+        name: toolName,
+        input: state?.input ?? event.part?.input ?? event.part?.arguments,
       });
-      if (event.part?.state?.status === "error") {
+      if (state?.status === "completed" && state.output != null) {
         events.push({
           type: "tool_result",
-          content: event.part.state.error ?? "Tool error",
+          content: typeof state.output === "string" ? state.output : JSON.stringify(state.output),
+          isError: false,
+        });
+      } else if (state?.status === "error") {
+        events.push({
+          type: "tool_result",
+          content: state.error ?? "Tool error",
           isError: true,
         });
       }
