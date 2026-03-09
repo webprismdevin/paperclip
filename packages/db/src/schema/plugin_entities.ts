@@ -33,7 +33,7 @@ export const pluginEntities = pgTable(
       .references(() => plugins.id, { onDelete: "cascade" }),
     entityType: text("entity_type").notNull(),
     scopeKind: text("scope_kind").$type<PluginStateScopeKind>().notNull(),
-    scopeId: uuid("scope_id"), // NULL for global scope
+    scopeId: text("scope_id"), // NULL for global scope (text to match plugin_state.scope_id)
     externalId: text("external_id"), // ID in the external system
     title: text("title"),
     status: text("status"),

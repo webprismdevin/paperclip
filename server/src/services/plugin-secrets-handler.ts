@@ -38,6 +38,7 @@ import type { Db } from "@paperclipai/db";
 import { companySecrets, companySecretVersions } from "@paperclipai/db";
 import type { SecretProvider } from "@paperclipai/shared";
 import { getSecretProvider } from "../secrets/provider-registry.js";
+import { pluginRegistryService } from "./plugin-registry.js";
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -146,14 +147,44 @@ export interface PluginSecretsService {
  * @param options - Database connection and plugin identity
  * @returns A `PluginSecretsService` suitable for `HostServices.secrets`
  */
+/** Simple sliding-window rate limiter for secret resolution attempts. */
+function createRateLimiter(maxAttempts: number, windowMs: number) {
+  const attempts = new Map<string, number[]>();
+
+  return {
+    check(key: string): boolean {
+      const now = Date.now();
+      const windowStart = now - windowMs;
+      const existing = (attempts.get(key) ?? []).filter((ts) => ts > windowStart);
+      if (existing.length >= maxAttempts) return false;
+      existing.push(now);
+      attempts.set(key, existing);
+      return true;
+    },
+  };
+}
+
 export function createPluginSecretsHandler(
   options: PluginSecretsHandlerOptions,
 ): PluginSecretsService {
-  const { db } = options;
+  const { db, pluginId } = options;
+  const registry = pluginRegistryService(db);
+
+  // Rate limit: max 30 resolution attempts per plugin per minute
+  const rateLimiter = createRateLimiter(30, 60_000);
 
   return {
     async resolve(params: PluginSecretsResolveParams): Promise<string> {
       const { secretRef } = params;
+
+      // ---------------------------------------------------------------
+      // 0. Rate limiting — prevent brute-force UUID enumeration
+      // ---------------------------------------------------------------
+      if (!rateLimiter.check(pluginId)) {
+        const err = new Error("Rate limit exceeded for secret resolution");
+        err.name = "RateLimitExceededError";
+        throw err;
+      }
 
       // ---------------------------------------------------------------
       // 1. Validate the ref format
@@ -179,6 +210,19 @@ export function createPluginSecretsHandler(
 
       if (!secret) {
         throw secretNotFound(trimmedRef);
+      }
+
+      // ---------------------------------------------------------------
+      // 2b. Verify the plugin is available for the secret's company.
+      //     This prevents cross-company secret access via UUID guessing.
+      // ---------------------------------------------------------------
+      const companyId = (secret as { companyId?: string }).companyId;
+      if (companyId) {
+        const availability = await registry.getCompanyAvailability(companyId, pluginId);
+        if (!availability || !availability.available) {
+          // Return the same error as "not found" to avoid leaking existence
+          throw secretNotFound(trimmedRef);
+        }
       }
 
       // ---------------------------------------------------------------

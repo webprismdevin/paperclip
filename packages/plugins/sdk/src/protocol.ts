@@ -20,12 +20,19 @@ import type {
   PluginLauncherBounds,
   PluginLauncherRenderContextSnapshot,
   PluginLauncherRenderEnvironment,
+  Company,
+  Project,
+  Issue,
+  IssueComment,
+  Agent,
+  Goal,
 } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
   PluginEvent,
   PluginJobContext,
+  PluginWorkspace,
   ToolRunContext,
   ToolResult,
 } from "./types.js";
@@ -522,33 +529,33 @@ export interface WorkerToHostMethods {
   // Companies (read)
   "companies.list": [
     params: { limit?: number; offset?: number },
-    result: unknown[],
+    result: Company[],
   ];
   "companies.get": [
     params: { companyId: string },
-    result: unknown | null,
+    result: Company | null,
   ];
 
   // Projects (read)
   "projects.list": [
     params: { companyId: string; limit?: number; offset?: number },
-    result: unknown[],
+    result: Project[],
   ];
   "projects.get": [
     params: { projectId: string; companyId: string },
-    result: unknown | null,
+    result: Project | null,
   ];
   "projects.listWorkspaces": [
     params: { projectId: string; companyId: string },
-    result: unknown[],
+    result: PluginWorkspace[],
   ];
   "projects.getPrimaryWorkspace": [
     params: { projectId: string; companyId: string },
-    result: unknown | null,
+    result: PluginWorkspace | null,
   ];
   "projects.getWorkspaceForIssue": [
     params: { issueId: string; companyId: string },
-    result: unknown | null,
+    result: PluginWorkspace | null,
   ];
 
   // Issues
@@ -561,11 +568,11 @@ export interface WorkerToHostMethods {
       limit?: number;
       offset?: number;
     },
-    result: unknown[],
+    result: Issue[],
   ];
   "issues.get": [
     params: { issueId: string; companyId: string },
-    result: unknown | null,
+    result: Issue | null,
   ];
   "issues.create": [
     params: {
@@ -578,7 +585,7 @@ export interface WorkerToHostMethods {
       priority?: string;
       assigneeAgentId?: string;
     },
-    result: unknown,
+    result: Issue,
   ];
   "issues.update": [
     params: {
@@ -586,35 +593,35 @@ export interface WorkerToHostMethods {
       patch: Record<string, unknown>;
       companyId: string;
     },
-    result: unknown,
+    result: Issue,
   ];
   "issues.listComments": [
     params: { issueId: string; companyId: string },
-    result: unknown[],
+    result: IssueComment[],
   ];
   "issues.createComment": [
     params: { issueId: string; body: string; companyId: string },
-    result: unknown,
+    result: IssueComment,
   ];
 
   // Agents (read)
   "agents.list": [
     params: { companyId: string; status?: string; limit?: number; offset?: number },
-    result: unknown[],
+    result: Agent[],
   ];
   "agents.get": [
     params: { agentId: string; companyId: string },
-    result: unknown | null,
+    result: Agent | null,
   ];
 
   // Agents (write)
   "agents.pause": [
     params: { agentId: string; companyId: string },
-    result: unknown,
+    result: Agent,
   ];
   "agents.resume": [
     params: { agentId: string; companyId: string },
-    result: unknown,
+    result: Agent,
   ];
   "agents.invoke": [
     params: { agentId: string; companyId: string; prompt: string; reason?: string },
@@ -642,11 +649,11 @@ export interface WorkerToHostMethods {
   // Goals
   "goals.list": [
     params: { companyId: string; level?: string; status?: string; limit?: number; offset?: number },
-    result: unknown[],
+    result: Goal[],
   ];
   "goals.get": [
     params: { goalId: string; companyId: string },
-    result: unknown | null,
+    result: Goal | null,
   ];
   "goals.create": [
     params: {
@@ -658,7 +665,7 @@ export interface WorkerToHostMethods {
       parentId?: string;
       ownerAgentId?: string;
     },
-    result: unknown,
+    result: Goal,
   ];
   "goals.update": [
     params: {
@@ -666,7 +673,7 @@ export interface WorkerToHostMethods {
       patch: Record<string, unknown>;
       companyId: string;
     },
-    result: unknown,
+    result: Goal,
   ];
 }
 

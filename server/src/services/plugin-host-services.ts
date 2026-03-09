@@ -27,7 +27,85 @@ import { pluginStateStore } from "./plugin-state-store.js";
 import { createPluginSecretsHandler } from "./plugin-secrets-handler.js";
 import { logActivity } from "./activity-log.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
+import { lookup as dnsLookup } from "node:dns/promises";
 import { logger } from "../middleware/logger.js";
+
+// ---------------------------------------------------------------------------
+// SSRF protection for plugin HTTP fetch
+// ---------------------------------------------------------------------------
+
+/** Maximum time (ms) a plugin fetch request may take before being aborted. */
+const PLUGIN_FETCH_TIMEOUT_MS = 30_000;
+
+/** Only these protocols are allowed for plugin HTTP requests. */
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
+
+/**
+ * Check if an IP address is in a private/reserved range (RFC 1918, loopback,
+ * link-local, etc.) that plugins should never be able to reach.
+ */
+function isPrivateIP(ip: string): boolean {
+  // IPv4 patterns
+  if (ip.startsWith("10.")) return true;
+  if (ip.startsWith("172.")) {
+    const second = parseInt(ip.split(".")[1]!, 10);
+    if (second >= 16 && second <= 31) return true;
+  }
+  if (ip.startsWith("192.168.")) return true;
+  if (ip.startsWith("127.")) return true;                   // loopback
+  if (ip.startsWith("169.254.")) return true;               // link-local
+  if (ip === "0.0.0.0") return true;
+  // AWS / cloud metadata endpoints
+  if (ip === "169.254.169.254") return true;
+
+  // IPv6 patterns
+  const lower = ip.toLowerCase();
+  if (lower === "::1") return true;                          // loopback
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA
+  if (lower.startsWith("fe80")) return true;                 // link-local
+  if (lower === "::") return true;
+
+  return false;
+}
+
+/**
+ * Validate a URL for plugin fetch: protocol whitelist + private IP blocking.
+ * Throws on violations.
+ */
+async function validateFetchUrl(urlString: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new Error(`Invalid URL: ${urlString}`);
+  }
+
+  if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
+    throw new Error(
+      `Disallowed protocol "${parsed.protocol}" — only http: and https: are permitted`,
+    );
+  }
+
+  // Resolve the hostname to an IP and check for private ranges.
+  // This prevents DNS-rebinding from bypassing the check at connect time,
+  // because we validate *before* handing the URL to fetch().
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+  try {
+    const results = await dnsLookup(hostname, { all: true });
+    for (const entry of results) {
+      if (isPrivateIP(entry.address)) {
+        throw new Error(
+          `Blocked request to private/reserved IP ${entry.address} (resolved from ${hostname})`,
+        );
+      }
+    }
+  } catch (err) {
+    // Re-throw our own errors; wrap DNS failures
+    if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
+    if (err instanceof Error && err.message.startsWith("Disallowed protocol")) throw err;
+    throw new Error(`DNS resolution failed for ${hostname}: ${(err as Error).message}`);
+  }
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PATH_LIKE_PATTERN = /[\\/]/;
@@ -183,19 +261,33 @@ export function buildHostServices(
 
     http: {
       async fetch(params) {
-        const response = await fetch(params.url, params.init as RequestInit);
-        const body = await response.text();
-        const headers: Record<string, string> = {};
-        response.headers.forEach((v, k) => {
-          headers[k] = v;
-        });
+        // SSRF protection: validate protocol whitelist + block private IPs
+        await validateFetchUrl(params.url);
 
-        return {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-          body,
-        };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), PLUGIN_FETCH_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(params.url, {
+            ...params.init as RequestInit,
+            signal: controller.signal,
+            redirect: "manual", // prevent open-redirect to internal IPs
+          });
+          const body = await response.text();
+          const headers: Record<string, string> = {};
+          response.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
+
+          return {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+            body,
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
       },
     },
 
@@ -244,8 +336,8 @@ export function buildHostServices(
             message: params.name,
             meta: { value: params.value, tags: params.tags ?? null },
           })
-          .catch(() => {
-            // Swallow DB write errors to avoid disrupting the plugin.
+          .catch((err) => {
+            logger.warn({ pluginId, err, metric: params.name }, "Failed to persist plugin metric to DB");
           });
       },
     },
@@ -274,8 +366,8 @@ export function buildHostServices(
             message: message ?? "",
             meta: meta ?? null,
           })
-          .catch(() => {
-            // Swallow DB write errors to avoid disrupting the plugin.
+          .catch((err) => {
+            logger.warn({ pluginId, err, level }, "Failed to persist plugin log to DB");
           });
       },
     },

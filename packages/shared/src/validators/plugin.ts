@@ -46,11 +46,30 @@ export const jsonSchemaSchema = z.record(z.unknown()).refine(
  *
  * @see PLUGIN_SPEC.md §17 — Scheduled Jobs
  */
+/**
+ * Validates a cron expression has exactly 5 whitespace-separated fields,
+ * each containing only valid cron characters (digits, *, /, -, ,).
+ *
+ * Valid tokens per field: *, N, N-M, N/S, * /S, N-M/S, and comma-separated lists.
+ */
+const CRON_FIELD_PATTERN = /^(\*(?:\/[0-9]+)?|[0-9]+(?:-[0-9]+)?(?:\/[0-9]+)?)(?:,(\*(?:\/[0-9]+)?|[0-9]+(?:-[0-9]+)?(?:\/[0-9]+)?))*$/;
+
+function isValidCronExpression(expression: string): boolean {
+  const trimmed = expression.trim();
+  if (!trimmed) return false;
+  const fields = trimmed.split(/\s+/);
+  if (fields.length !== 5) return false;
+  return fields.every((f) => CRON_FIELD_PATTERN.test(f));
+}
+
 export const pluginJobDeclarationSchema = z.object({
   jobKey: z.string().min(1),
   displayName: z.string().min(1),
   description: z.string().optional(),
-  schedule: z.string().optional(),
+  schedule: z.string().refine(
+    (val) => isValidCronExpression(val),
+    { message: "schedule must be a valid 5-field cron expression (e.g. '*/15 * * * *')" },
+  ).optional(),
 });
 
 export type PluginJobDeclarationInput = z.infer<typeof pluginJobDeclarationSchema>;
@@ -326,19 +345,19 @@ export const pluginManifestV1Schema = z.object({
   ),
   apiVersion: z.literal(1),
   version: z.string().min(1).regex(
-    /^\d+\.\d+\.\d+/,
-    "Version must follow semver (e.g. 1.0.0)",
+    /^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/,
+    "Version must follow semver (e.g. 1.0.0 or 1.0.0-beta.1)",
   ),
   displayName: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
   author: z.string().min(1).max(200),
   categories: z.array(z.enum(PLUGIN_CATEGORIES)).min(1),
   minimumHostVersion: z.string().regex(
-    /^\d+\.\d+\.\d+/,
+    /^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/,
     "minimumHostVersion must follow semver (e.g. 1.0.0)",
   ).optional(),
   minimumPaperclipVersion: z.string().regex(
-    /^\d+\.\d+\.\d+/,
+    /^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/,
     "minimumPaperclipVersion must follow semver (e.g. 1.0.0)",
   ).optional(),
   capabilities: z.array(z.enum(PLUGIN_CAPABILITIES)).min(1),

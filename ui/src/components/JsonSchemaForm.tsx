@@ -175,13 +175,18 @@ export function validateField(
       return `Must be at most ${schema.maxLength} characters`;
     }
     if (schema.pattern) {
-      try {
-        const re = new RegExp(schema.pattern);
-        if (!re.test(str)) {
-          return `Must match pattern: ${schema.pattern}`;
+      // Guard against ReDoS: reject overly complex patterns from plugin JSON Schemas.
+      // Limit pattern length and run the regex with a defensive try/catch.
+      const MAX_PATTERN_LENGTH = 512;
+      if (schema.pattern.length <= MAX_PATTERN_LENGTH) {
+        try {
+          const re = new RegExp(schema.pattern);
+          if (!re.test(str)) {
+            return `Must match pattern: ${schema.pattern}`;
+          }
+        } catch {
+          // Invalid regex in schema — skip
         }
-      } catch {
-        // Invalid regex in schema — skip
       }
     }
   }

@@ -1,3 +1,8 @@
+-- Rollback:
+--   DROP INDEX IF EXISTS "plugin_logs_level_idx";
+--   DROP INDEX IF EXISTS "plugin_logs_plugin_time_idx";
+--   DROP TABLE IF EXISTS "plugin_logs";
+
 CREATE TABLE IF NOT EXISTS "plugin_logs" (
   "id" serial PRIMARY KEY,
   "plugin_id" uuid NOT NULL REFERENCES "plugins"("id") ON DELETE CASCADE,

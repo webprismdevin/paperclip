@@ -103,9 +103,29 @@ export function Sidebar() {
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Company Settings" icon={Settings} />
         </SidebarSection>
+
+        {/* Plugin sidebar nav entries — lightweight links/indicators among the nav sections */}
+        <PluginLauncherOutlet
+          placementZones={["sidebar"]}
+          context={{
+            companyId: selectedCompanyId,
+            companyPrefix: selectedCompany?.issuePrefix ?? null,
+          }}
+          className="flex flex-col gap-0.5"
+        />
+        <PluginSlotOutlet
+          slotTypes={["sidebar"]}
+          context={{
+            companyId: selectedCompanyId,
+            companyPrefix: selectedCompany?.issuePrefix ?? null,
+          }}
+          className="flex flex-col gap-0.5"
+        />
+
+        {/* Plugin sidebar panels — richer inline content (widgets, summaries, action panels) */}
         <div className="space-y-2">
           <PluginLauncherOutlet
-            placementZones={["sidebarPanel", "sidebar"]}
+            placementZones={["sidebarPanel"]}
             context={{
               companyId: selectedCompanyId,
               companyPrefix: selectedCompany?.issuePrefix ?? null,
@@ -113,7 +133,7 @@ export function Sidebar() {
             className="space-y-2"
           />
           <PluginSlotOutlet
-            slotTypes={["sidebarPanel", "sidebar"]}
+            slotTypes={["sidebarPanel"]}
             context={{
               companyId: selectedCompanyId,
               companyPrefix: selectedCompany?.issuePrefix ?? null,

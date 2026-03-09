@@ -113,6 +113,42 @@ describe("pluginJobDeclarationSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts valid cron expressions", () => {
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "*/15 * * * *",
+    }).success).toBe(true);
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "0 0 * * 0",
+    }).success).toBe(true);
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "0 9-17 * * 1-5",
+    }).success).toBe(true);
+  });
+
+  it("rejects invalid cron expressions", () => {
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "not-a-cron",
+    }).success).toBe(false);
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "* * *",
+    }).success).toBe(false);
+    expect(pluginJobDeclarationSchema.safeParse({
+      jobKey: "sync",
+      displayName: "Sync",
+      schedule: "",
+    }).success).toBe(false);
+  });
 });
 
 // ===========================================================================
@@ -565,9 +601,23 @@ describe("pluginManifestV1Schema", () => {
       expect(pluginManifestV1Schema.safeParse(validManifest({ version: "10.20.30" })).success).toBe(true);
     });
 
+    it("accepts valid semver with pre-release and build metadata", () => {
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0-alpha" })).success).toBe(true);
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0-rc.1" })).success).toBe(true);
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0+build.123" })).success).toBe(true);
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0-beta.2+sha.abc" })).success).toBe(true);
+    });
+
     it("rejects invalid versions", () => {
       expect(pluginManifestV1Schema.safeParse(validManifest({ version: "v1.0" })).success).toBe(false);
       expect(pluginManifestV1Schema.safeParse(validManifest({ version: "latest" })).success).toBe(false);
+    });
+
+    it("rejects semver with trailing garbage", () => {
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0-garbage" })).success).toBe(true); // valid pre-release
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0 extra" })).success).toBe(false);
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0/path" })).success).toBe(false);
+      expect(pluginManifestV1Schema.safeParse(validManifest({ version: "1.0.0!!" })).success).toBe(false);
     });
   });
 

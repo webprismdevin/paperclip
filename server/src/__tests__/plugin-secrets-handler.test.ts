@@ -26,6 +26,23 @@ vi.mock("../secrets/provider-registry.js", () => ({
   }),
 }));
 
+vi.mock("../services/plugin-registry.js", () => ({
+  pluginRegistryService: vi.fn().mockReturnValue({
+    getCompanyAvailability: vi.fn().mockResolvedValue({
+      companyId: "company-uuid-1",
+      pluginId: "acme.test-plugin",
+      pluginKey: "acme.test-plugin",
+      pluginDisplayName: "Test Plugin",
+      pluginStatus: "active",
+      available: true,
+      settingsJson: {},
+      lastError: null,
+      createdAt: null,
+      updatedAt: null,
+    }),
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

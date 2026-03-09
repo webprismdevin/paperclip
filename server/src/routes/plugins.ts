@@ -1376,7 +1376,7 @@ export function pluginRoutes(
    * Query recent log entries for a plugin.
    *
    * Query params:
-   * - limit: Maximum number of entries (default 100, max 500)
+   * - limit: Maximum number of entries (default 25, max 500)
    * - level: Filter by log level (info, warn, error, debug)
    * - since: ISO timestamp to filter logs newer than this time
    *
@@ -1392,7 +1392,7 @@ export function pluginRoutes(
       return;
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 100, 1), 500);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 25, 1), 500);
     const level = req.query.level as string | undefined;
     const since = req.query.since as string | undefined;
 
@@ -1756,7 +1756,7 @@ export function pluginRoutes(
       return;
     }
 
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 25;
     if (isNaN(limit) || limit < 1 || limit > 500) {
       res.status(400).json({ error: "limit must be a number between 1 and 500" });
       return;

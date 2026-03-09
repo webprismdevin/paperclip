@@ -1,3 +1,29 @@
+-- Rollback:
+--   DROP INDEX IF EXISTS "plugin_webhook_deliveries_key_idx";
+--   DROP INDEX IF EXISTS "plugin_webhook_deliveries_status_idx";
+--   DROP INDEX IF EXISTS "plugin_webhook_deliveries_plugin_idx";
+--   DROP INDEX IF EXISTS "plugin_job_runs_status_idx";
+--   DROP INDEX IF EXISTS "plugin_job_runs_plugin_idx";
+--   DROP INDEX IF EXISTS "plugin_job_runs_job_idx";
+--   DROP INDEX IF EXISTS "plugin_jobs_unique_idx";
+--   DROP INDEX IF EXISTS "plugin_jobs_next_run_idx";
+--   DROP INDEX IF EXISTS "plugin_jobs_plugin_idx";
+--   DROP INDEX IF EXISTS "plugin_entities_external_idx";
+--   DROP INDEX IF EXISTS "plugin_entities_scope_idx";
+--   DROP INDEX IF EXISTS "plugin_entities_type_idx";
+--   DROP INDEX IF EXISTS "plugin_entities_plugin_idx";
+--   DROP INDEX IF EXISTS "plugin_state_plugin_scope_idx";
+--   DROP INDEX IF EXISTS "plugin_config_plugin_id_idx";
+--   DROP INDEX IF EXISTS "plugins_status_idx";
+--   DROP INDEX IF EXISTS "plugins_plugin_key_idx";
+--   DROP TABLE IF EXISTS "plugin_webhook_deliveries";
+--   DROP TABLE IF EXISTS "plugin_job_runs";
+--   DROP TABLE IF EXISTS "plugin_jobs";
+--   DROP TABLE IF EXISTS "plugin_entities";
+--   DROP TABLE IF EXISTS "plugin_state";
+--   DROP TABLE IF EXISTS "plugin_config";
+--   DROP TABLE IF EXISTS "plugins";
+
 CREATE TABLE "plugins" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"plugin_key" text NOT NULL,

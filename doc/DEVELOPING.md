@@ -15,6 +15,44 @@ Current implementation status:
 - Node.js 20+
 - pnpm 9+
 
+## Build Dependency Ordering
+
+Packages must be built in dependency order. `pnpm -r build` handles this automatically for full builds, but when building or typechecking individual packages you must ensure their dependencies are built first.
+
+**Dependency graph:**
+
+```
+@paperclipai/shared          (no deps — build first)
+       │
+       ├── @paperclipai/db   (depends on shared)
+       │
+       └── @paperclipai/plugin-sdk  (depends on shared)
+               │
+               ├── server    (depends on shared, db, plugin-sdk)
+               ├── ui        (depends on plugin-sdk)
+               └── plugin examples (depend on plugin-sdk)
+```
+
+**Build order for full rebuild:**
+
+```sh
+pnpm --filter @paperclipai/shared build    # 1. shared (base types, constants, validators)
+pnpm --filter @paperclipai/db build        # 2. db (schema, migrations — depends on shared)
+pnpm --filter @paperclipai/plugin-sdk build # 3. plugin-sdk (protocol, types — depends on shared)
+# server, ui, cli, adapters can now build/typecheck in parallel
+```
+
+Individual package scripts encode these dependencies (e.g. `server/package.json` runs `pnpm --filter @paperclipai/plugin-sdk build` before `tsc --noEmit`), but if you modify shared types and then typecheck only the server, the stale shared build will cause confusing errors.
+
+**Quick reference:**
+
+| If you changed... | Rebuild before typechecking |
+|---|---|
+| `packages/shared/` | `pnpm --filter @paperclipai/shared build` |
+| `packages/db/` | `pnpm --filter @paperclipai/db build` |
+| `packages/plugins/sdk/` | `pnpm --filter @paperclipai/plugin-sdk build` |
+| Multiple packages | `pnpm -r build` (full recursive build) |
+
 ## Dependency Lockfile Policy
 
 GitHub Actions owns `pnpm-lock.yaml`.

@@ -5,7 +5,6 @@ import {
   timestamp,
   jsonb,
   index,
-  serial,
 } from "drizzle-orm/pg-core";
 import { plugins } from "./plugins.js";
 
@@ -25,7 +24,7 @@ import { plugins } from "./plugins.js";
 export const pluginLogs = pgTable(
   "plugin_logs",
   {
-    id: serial("id").primaryKey(),
+    id: uuid("id").primaryKey().defaultRandom(),
     pluginId: uuid("plugin_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "cascade" }),

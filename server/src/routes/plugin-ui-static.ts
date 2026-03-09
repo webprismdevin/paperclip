@@ -291,27 +291,56 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
       if (typeof devUiUrl === "string" && devUiUrl.length > 0) {
         // Proxy the request to the dev server
         const targetUrl = new URL(rawFilePath, devUiUrl.endsWith("/") ? devUiUrl : devUiUrl + "/");
+
+        // SSRF protection: only allow http/https and localhost targets for dev proxy
+        if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
+          res.status(400).json({ error: "devUiUrl must use http or https protocol" });
+          return;
+        }
+
+        // Dev proxy is restricted to loopback addresses only
+        const devHost = targetUrl.hostname;
+        const isLoopback =
+          devHost === "localhost" ||
+          devHost === "127.0.0.1" ||
+          devHost === "::1" ||
+          devHost === "[::1]";
+        if (!isLoopback) {
+          log.warn(
+            { pluginId: plugin.id, devUiUrl, host: devHost },
+            "plugin-ui-static: devUiUrl must target localhost, rejecting proxy",
+          );
+          res.status(400).json({ error: "devUiUrl must target localhost" });
+          return;
+        }
+
         log.debug(
           { pluginId: plugin.id, devUiUrl, targetUrl: targetUrl.href },
           "plugin-ui-static: proxying to devUiUrl",
         );
 
         try {
-          const upstream = await fetch(targetUrl.href);
-          if (!upstream.ok) {
-            res.status(upstream.status).json({
-              error: `Dev server returned ${upstream.status}`,
-            });
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10_000);
+          try {
+            const upstream = await fetch(targetUrl.href, { signal: controller.signal });
+            if (!upstream.ok) {
+              res.status(upstream.status).json({
+                error: `Dev server returned ${upstream.status}`,
+              });
+              return;
+            }
+
+            const contentType = upstream.headers.get("content-type");
+            if (contentType) res.set("Content-Type", contentType);
+            res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+
+            const body = await upstream.arrayBuffer();
+            res.send(Buffer.from(body));
             return;
+          } finally {
+            clearTimeout(timeout);
           }
-
-          const contentType = upstream.headers.get("content-type");
-          if (contentType) res.set("Content-Type", contentType);
-          res.set("Cache-Control", "no-cache, no-store, must-revalidate");
-
-          const body = await upstream.arrayBuffer();
-          res.send(Buffer.from(body));
-          return;
         } catch (proxyErr) {
           log.warn(
             {
@@ -345,15 +374,8 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
       return;
     }
 
-    // Step 4: Resolve the requested file path and prevent traversal
+    // Step 4: Resolve the requested file path and prevent traversal (including symlinks)
     const resolvedFilePath = path.resolve(uiDir, rawFilePath);
-    const normalizedUiDir = path.resolve(uiDir);
-
-    // Security: ensure the resolved path is within the UI directory
-    if (!resolvedFilePath.startsWith(normalizedUiDir + path.sep) && resolvedFilePath !== normalizedUiDir) {
-      res.status(403).json({ error: "Access denied" });
-      return;
-    }
 
     // Step 5: Check that the file exists and is a regular file
     let fileStat: fs.Stats;
@@ -361,6 +383,24 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
       fileStat = fs.statSync(resolvedFilePath);
     } catch {
       res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    // Security: resolve symlinks via realpathSync and verify containment.
+    // This prevents symlink-based traversal that string-based startsWith misses.
+    let realFilePath: string;
+    let realUiDir: string;
+    try {
+      realFilePath = fs.realpathSync(resolvedFilePath);
+      realUiDir = fs.realpathSync(uiDir);
+    } catch {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const relative = path.relative(realUiDir, realFilePath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 

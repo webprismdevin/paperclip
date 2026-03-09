@@ -197,7 +197,51 @@ The same set of values is used as **slot types** (where a component mounts) and 
 | `toolbarButton` | Entity | varies by host surface |
 | `contextMenuItem` | Entity | varies by host surface |
 
+**Scope** describes whether the slot requires an entity to render. **Global** slots render without a specific entity but still receive the active `companyId` through `PluginHostContext` — use it to scope data fetches to the current company. **Entity** slots additionally require `entityId` and `entityType` (e.g. a detail tab on a specific issue).
+
 **Entity types** (for `entityTypes` on slots): `project` \| `issue` \| `agent` \| `goal` \| `run`. Full list: import `PLUGIN_UI_SLOT_TYPES` and `PLUGIN_UI_SLOT_ENTITY_TYPES` from `@paperclipai/plugin-sdk`.
+
+### Slot component descriptions
+
+#### `page`
+
+A full-page extension mounted at `/plugins/:pluginId` (global) or `/:company/plugins/:pluginId` (company-scoped). Use this for rich, standalone plugin experiences such as dashboards, configuration wizards, or multi-step workflows. Receives `PluginPageProps` with `context.companyId` set to the active company. Requires the `ui.page.register` capability.
+
+#### `sidebar`
+
+Adds a navigation-style entry to the main company sidebar navigation area, rendered alongside the core nav items (Dashboard, Issues, Goals, etc.). Use this for lightweight, always-visible links or status indicators that feel native to the sidebar. Receives `PluginSidebarProps` with `context.companyId` set to the active company. Requires the `ui.sidebar.register` capability.
+
+#### `sidebarPanel`
+
+Renders richer inline content in a dedicated panel area below the company sidebar navigation sections. Use this for mini-widgets, summary cards, quick-action panels, or at-a-glance status views that need more vertical space than a nav link. Receives `context.companyId` set to the active company via `useHostContext()`. Requires the `ui.sidebar.register` capability.
+
+#### `settingsPage`
+
+Replaces the auto-generated JSON Schema settings form with a custom React component. Use this when the default form is insufficient — for example, when your plugin needs multi-step configuration, OAuth flows, "Test Connection" buttons, or rich input controls. Receives `PluginSettingsPageProps` with `context.companyId` set to the active company. The component is responsible for reading and writing config through the bridge (via `usePluginData` and `usePluginAction`).
+
+#### `dashboardWidget`
+
+A card or section rendered on the main dashboard. Use this for at-a-glance metrics, status indicators, or summary views that surface plugin data alongside core Paperclip information. Receives `PluginWidgetProps` with `context.companyId` set to the active company. Requires the `ui.dashboardWidget.register` capability.
+
+#### `detailTab`
+
+An additional tab on a project, issue, agent, goal, or run detail page. Rendered when the user navigates to that entity's detail view. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null, so you can immediately scope data fetches to the relevant entity. Specify which entity types the tab applies to via the `entityTypes` array in the manifest slot declaration. Requires the `ui.detailTab.register` capability.
+
+#### `taskDetailView`
+
+A specialized slot rendered in the context of a task or issue detail view. Similar to `detailTab` but designed for inline content within the task detail layout rather than a separate tab. Receives `context.companyId`, `context.entityId`, and `context.entityType` like `detailTab`. Requires the `ui.detailTab.register` capability.
+
+#### `projectSidebarItem`
+
+A link or small component rendered **once per project** under that project's row in the sidebar Projects list. Use this to add project-scoped navigation entries (e.g. "Files", "Linear Sync") that deep-link into a plugin detail tab: `/:company/projects/:projectRef?tab=plugin:<key>:<slotId>`. Receives `PluginProjectSidebarItemProps` with `context.companyId` set to the active company, `context.entityId` set to the project id, and `context.entityType` set to `"project"`. Use the optional `order` field in the manifest slot to control sort position. Requires the `ui.sidebar.register` capability.
+
+#### `toolbarButton`
+
+A button rendered in the toolbar of a host surface (e.g. project detail, issue detail). Use this for short-lived, contextual actions like triggering a sync, opening a picker, or running a quick command. The component can open a plugin-owned modal internally for confirmations or compact forms. Receives `context.companyId` set to the active company; entity context varies by host surface. Requires the `ui.action.register` capability.
+
+#### `contextMenuItem`
+
+An entry added to a right-click or overflow context menu on a host surface. Use this for secondary actions that apply to the entity under the cursor (e.g. "Copy to Linear", "Re-run analysis"). Receives `context.companyId` set to the active company; entity context varies by host surface. Requires the `ui.action.register` capability.
 
 ### Launcher actions and render options
 
@@ -275,6 +319,227 @@ export function DashboardWidget() {
       <MetricCard label="Health" value={data?.status ?? "unknown"} />
       <button onClick={() => void ping()}>Ping</button>
     </div>
+  );
+}
+```
+
+### Hooks reference
+
+#### `usePluginData<T>(key, params?)`
+
+Fetches data from the worker's registered `getData` handler. Re-fetches when `params` changes. Returns `{ data, loading, error, refresh }`.
+
+```tsx
+import { usePluginData, Spinner, StatusBadge } from "@paperclipai/plugin-sdk/ui";
+
+interface SyncStatus {
+  lastSyncAt: string;
+  syncedCount: number;
+  healthy: boolean;
+}
+
+export function SyncStatusWidget({ context }: PluginWidgetProps) {
+  const { data, loading, error, refresh } = usePluginData<SyncStatus>("sync-status", {
+    companyId: context.companyId,
+  });
+
+  if (loading) return <Spinner />;
+  if (error) return <StatusBadge label={error.message} status="error" />;
+
+  return (
+    <div>
+      <StatusBadge label={data!.healthy ? "Healthy" : "Unhealthy"} status={data!.healthy ? "ok" : "error"} />
+      <p>Synced {data!.syncedCount} items</p>
+      <p>Last sync: {data!.lastSyncAt}</p>
+      <button onClick={refresh}>Refresh</button>
+    </div>
+  );
+}
+```
+
+#### `usePluginAction(key)`
+
+Returns an async function that calls the worker's `performAction` handler. Throws `PluginBridgeError` on failure.
+
+```tsx
+import { useState } from "react";
+import { usePluginAction, type PluginBridgeError } from "@paperclipai/plugin-sdk/ui";
+
+export function ResyncButton({ context }: PluginWidgetProps) {
+  const resync = usePluginAction("resync");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resync({ companyId: context.companyId });
+    } catch (err) {
+      setError((err as PluginBridgeError).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <button onClick={handleClick} disabled={busy}>
+        {busy ? "Syncing..." : "Resync Now"}
+      </button>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+    </div>
+  );
+}
+```
+
+#### `useHostContext()`
+
+Reads the active company, project, entity, and user context. Use this to scope data fetches and actions.
+
+```tsx
+import { useHostContext, usePluginData } from "@paperclipai/plugin-sdk/ui";
+import type { PluginDetailTabProps } from "@paperclipai/plugin-sdk/ui";
+
+export function IssueLinearLink({ context }: PluginDetailTabProps) {
+  const { companyId, entityId, entityType } = context;
+  const { data } = usePluginData<{ url: string }>("linear-link", {
+    companyId,
+    issueId: entityId,
+  });
+
+  if (!data?.url) return <p>No linked Linear issue.</p>;
+  return <a href={data.url} target="_blank" rel="noopener">View in Linear</a>;
+}
+```
+
+### Shared components reference
+
+All components are provided by the host at runtime and match the host design tokens. Import from `@paperclipai/plugin-sdk/ui` or `@paperclipai/plugin-sdk/ui/components`.
+
+#### `MetricCard`
+
+Displays a single metric value with optional trend and sparkline.
+
+```tsx
+<MetricCard label="Issues Synced" value={142} unit="issues" trend={{ direction: "up", percentage: 12 }} />
+<MetricCard label="API Latency" value="45ms" sparkline={[52, 48, 45, 47, 45]} />
+```
+
+#### `StatusBadge`
+
+Inline status indicator with semantic color.
+
+```tsx
+<StatusBadge label="Connected" status="ok" />
+<StatusBadge label="Rate Limited" status="warning" />
+<StatusBadge label="Auth Failed" status="error" />
+```
+
+#### `DataTable`
+
+Sortable, paginated table.
+
+```tsx
+<DataTable
+  columns={[
+    { key: "name", header: "Name", sortable: true },
+    { key: "status", header: "Status", width: "100px" },
+    { key: "updatedAt", header: "Updated", render: (v) => new Date(v as string).toLocaleDateString() },
+  ]}
+  rows={issues}
+  totalCount={totalCount}
+  page={page}
+  pageSize={25}
+  onPageChange={setPage}
+  onSort={(key, dir) => setSortBy({ key, dir })}
+/>
+```
+
+#### `TimeseriesChart`
+
+Line or bar chart for time-series data.
+
+```tsx
+<TimeseriesChart
+  title="Sync Frequency"
+  data={[
+    { timestamp: "2026-03-01T00:00:00Z", value: 24 },
+    { timestamp: "2026-03-02T00:00:00Z", value: 31 },
+    { timestamp: "2026-03-03T00:00:00Z", value: 28 },
+  ]}
+  type="bar"
+  yLabel="Syncs"
+  height={250}
+/>
+```
+
+#### `ActionBar`
+
+Row of action buttons wired to the plugin bridge.
+
+```tsx
+<ActionBar
+  actions={[
+    { label: "Sync Now", actionKey: "sync", variant: "primary" },
+    { label: "Clear Cache", actionKey: "clear-cache", confirm: true, confirmMessage: "Delete all cached data?" },
+  ]}
+  onSuccess={(key) => data.refresh()}
+  onError={(key, err) => console.error(key, err)}
+/>
+```
+
+#### `LogView`, `JsonTree`, `KeyValueList`, `MarkdownBlock`
+
+```tsx
+<LogView entries={logEntries} maxHeight="300px" autoScroll />
+<JsonTree data={debugPayload} defaultExpandDepth={3} />
+<KeyValueList pairs={[{ label: "Plugin ID", value: pluginId }, { label: "Version", value: "1.2.0" }]} />
+<MarkdownBlock content="**Bold** text and `code` blocks are supported." />
+```
+
+#### `Spinner`, `ErrorBoundary`
+
+```tsx
+<Spinner size="lg" label="Loading plugin data..." />
+
+<ErrorBoundary fallback={<p>Something went wrong.</p>} onError={(err) => console.error(err)}>
+  <MyPluginContent />
+</ErrorBoundary>
+```
+
+### Slot component props
+
+Each slot type receives a typed props object with `context: PluginHostContext`. Import from `@paperclipai/plugin-sdk/ui`.
+
+| Slot type | Props interface | `context` extras |
+|-----------|----------------|------------------|
+| `page` | `PluginPageProps` | — |
+| `sidebar` | `PluginSidebarProps` | — |
+| `settingsPage` | `PluginSettingsPageProps` | — |
+| `dashboardWidget` | `PluginWidgetProps` | — |
+| `detailTab` | `PluginDetailTabProps` | `entityId: string`, `entityType: string` |
+| `projectSidebarItem` | `PluginProjectSidebarItemProps` | `entityId: string`, `entityType: "project"` |
+
+Example detail tab with entity context:
+
+```tsx
+import type { PluginDetailTabProps } from "@paperclipai/plugin-sdk/ui";
+import { usePluginData, KeyValueList, Spinner } from "@paperclipai/plugin-sdk/ui";
+
+export function AgentMetricsTab({ context }: PluginDetailTabProps) {
+  const { data, loading } = usePluginData<Record<string, string>>("agent-metrics", {
+    agentId: context.entityId,
+    companyId: context.companyId,
+  });
+
+  if (loading) return <Spinner />;
+  if (!data) return <p>No metrics available.</p>;
+
+  return (
+    <KeyValueList
+      pairs={Object.entries(data).map(([label, value]) => ({ label, value }))}
+    />
   );
 }
 ```

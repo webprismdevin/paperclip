@@ -57,6 +57,9 @@ import { logger } from "../middleware/logger.js";
 /** Default timeout for RPC calls in milliseconds. */
 const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 
+/** Hard upper bound for any RPC timeout (5 minutes). Prevents unbounded waits. */
+const MAX_RPC_TIMEOUT_MS = 5 * 60 * 1_000;
+
 /** Timeout for the initialize RPC call. */
 const INITIALIZE_TIMEOUT_MS = 15_000;
 
@@ -925,7 +928,7 @@ export function createPluginWorkerHandle(
       }
 
       const id = nextRequestId++;
-      const timeout = timeoutMs ?? rpcTimeoutMs;
+      const timeout = Math.min(timeoutMs ?? rpcTimeoutMs, MAX_RPC_TIMEOUT_MS);
 
       // Guard against double-settlement. When a process exits all pending
       // requests are rejected via rejectAllPending(), but the timeout timer
@@ -1127,12 +1130,21 @@ export function createPluginWorkerManager(
 ): PluginWorkerManager {
   const log = logger.child({ service: "plugin-worker-manager" });
   const workers = new Map<string, PluginWorkerHandle>();
+  /** Per-plugin startup locks to prevent concurrent spawn races. */
+  const startupLocks = new Map<string, Promise<PluginWorkerHandle>>();
 
   return {
     async startWorker(
       pluginId: string,
       options: WorkerStartOptions,
     ): Promise<PluginWorkerHandle> {
+      // Mutex: if a start is already in-flight for this plugin, wait for it
+      const inFlight = startupLocks.get(pluginId);
+      if (inFlight) {
+        log.warn({ pluginId }, "concurrent startWorker call — waiting for in-flight start");
+        return inFlight;
+      }
+
       const existing = workers.get(pluginId);
       if (existing && existing.status !== "stopped") {
         throw new Error(
@@ -1168,9 +1180,14 @@ export function createPluginWorkerManager(
       }
 
       log.info({ pluginId }, "starting plugin worker");
-      await handle.start();
 
-      return handle;
+      // Set the lock before awaiting start() to prevent concurrent spawns
+      const startPromise = handle.start().then(() => handle).finally(() => {
+        startupLocks.delete(pluginId);
+      });
+      startupLocks.set(pluginId, startPromise);
+
+      return startPromise;
     },
 
     async stopWorker(pluginId: string): Promise<void> {

@@ -1,3 +1,9 @@
+-- Rollback:
+--   DROP INDEX IF EXISTS "plugin_company_settings_company_plugin_uq";
+--   DROP INDEX IF EXISTS "plugin_company_settings_plugin_idx";
+--   DROP INDEX IF EXISTS "plugin_company_settings_company_idx";
+--   DROP TABLE IF EXISTS "plugin_company_settings";
+
 CREATE TABLE "plugin_company_settings" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,
