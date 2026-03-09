@@ -16,7 +16,7 @@
     "prebuild": "node ../../../../scripts/ensure-plugin-build-deps.mjs",
     "build": "tsc",
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
   },
   "dependencies": {
     "@paperclipai/plugin-sdk": "workspace:*"
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^24.6.0",
     "@types/react": "^19.0.8",
+    "react": "^19.0.0",
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
