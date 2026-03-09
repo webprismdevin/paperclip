@@ -8,6 +8,7 @@ Investigate why an agent or the chat copilot behaved incorrectly, find the instr
 - User says "why didn't it...", "agent failed to...", "what went wrong with..."
 - User references a thread or issue where behavior was unexpected
 - User asks to investigate a run, check a thread, or diagnose a workflow problem
+- **Self-correction:** The user corrects YOUR behavior in the current conversation (e.g., "you should have done X", "why didn't you do Y", "that's not what I asked for"). This means your own instructions have a gap — diagnose and fix it the same way you would for any other agent
 
 ### Step 1: Pull the evidence
 
@@ -68,6 +69,17 @@ After fixing, briefly state:
 - **What went wrong** — one sentence
 - **Root cause** — which file was missing what
 - **What was fixed** — the specific addition/change
+
+### Self-correction (when YOU are the problem)
+
+When the user corrects your behavior in the current conversation, you already have the evidence — it's the conversation itself. Don't pull from the DB, just:
+
+1. **Acknowledge the mistake** briefly (one sentence, no over-apologizing)
+2. **Do the right thing immediately** — take the action the user wanted
+3. **Identify which instruction file caused the gap** — check `system-prompt.md` and `skills/*.md`
+4. **Fix it** so the same mistake doesn't happen again
+
+Example: User says "you should have created a task for @Noah, not searched the codebase yourself" → create the task immediately, then check the handoff skill to see why you didn't delegate.
 
 ### Critical rules
 
