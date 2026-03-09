@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToast } from "../context/ToastContext";
-import { useParams, useNavigate } from "@/lib/router";
+import { useParams, useNavigate, Link } from "@/lib/router";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -15,7 +15,6 @@ import {
   Terminal,
   ChevronDown,
   ChevronRight,
-  Sparkles,
   User,
   Bot,
   Circle,
@@ -118,6 +117,66 @@ interface PaperclipAgent {
   role: string;
   title?: string;
   status?: string;
+}
+
+interface PaperclipIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  status: string;
+  priority?: string;
+}
+
+/** Replace #IDENTIFIER references in markdown with links to the issue page */
+function linkifyIssues(content: string, issuePrefix: string | undefined): string {
+  if (!issuePrefix) return content;
+  // Match #IDENTIFIER (e.g. #PROJ-123) but not inside markdown links or code
+  return content.replace(/(^|[^[(\w])#([\w]+-\d+)/g, (_, before, id) => {
+    return `${before}[#${id}](/${issuePrefix}/issues/${id})`;
+  });
+}
+
+/** Custom markdown components — renders internal links with client-side navigation */
+const mdComponents: React.ComponentProps<typeof Markdown>["components"] = {
+  a: ({ href, children, ...props }) => {
+    if (href?.startsWith("/")) {
+      return (
+        <Link to={href} className="text-sidebar-primary hover:underline font-medium" {...props}>
+          {children}
+        </Link>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
+};
+
+/** Render plain text with #IDENTIFIER references as clickable links */
+function IssueLinkedText({ text, issuePrefix }: { text: string; issuePrefix?: string }) {
+  if (!issuePrefix) return <>{text}</>;
+  const parts = text.split(/(#[\w]+-\d+)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const match = part.match(/^#([\w]+-\d+)$/);
+        if (match) {
+          return (
+            <Link
+              key={i}
+              to={`/${issuePrefix}/issues/${match[1]}`}
+              className="text-sidebar-primary hover:underline font-medium"
+            >
+              {part}
+            </Link>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
 }
 
 interface Thread {
@@ -584,6 +643,8 @@ function ThinkingBlock({ content, isLive }: { content: string; isLive: boolean }
 // ── Message Row ────────────────────────────────────────────────────
 
 function MessageRow({ msg }: { msg: Message }) {
+  const { selectedCompany } = useCompany();
+  const prefix = selectedCompany?.issuePrefix;
   const isUser = msg.role === "user";
   const storedSegments = msg.metadata?.segments;
   const hasSegments = storedSegments && storedSegments.length > 0;
@@ -597,7 +658,7 @@ function MessageRow({ msg }: { msg: Message }) {
           </div>
         ) : (
           <div className="h-6 w-6 rounded bg-sidebar-primary/20 flex items-center justify-center">
-            <Sparkles className="h-3.5 w-3.5 text-sidebar-primary" />
+            <MessageCircle className="h-3.5 w-3.5 text-sidebar-primary" />
           </div>
         )}
       </div>
@@ -612,14 +673,16 @@ function MessageRow({ msg }: { msg: Message }) {
         </div>
         <div className="text-sm text-foreground/90 leading-relaxed">
           {isUser ? (
-            <p className="whitespace-pre-wrap">{msg.content}</p>
+            <p className="whitespace-pre-wrap">
+              <IssueLinkedText text={msg.content} issuePrefix={prefix} />
+            </p>
           ) : hasSegments ? (
             /* Render grouped segments — consecutive tool/thinking runs are collapsed */
             groupSegments(storedSegments).map((group, i) => {
               if (group.type === "text") {
                 return (
                   <div key={i} className="chat-markdown">
-                    <Markdown remarkPlugins={[remarkGfm]}>{group.content}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(group.content, prefix)}</Markdown>
                   </div>
                 );
               }
@@ -637,7 +700,7 @@ function MessageRow({ msg }: { msg: Message }) {
             })
           ) : (
             <div className="chat-markdown">
-              <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(msg.content, prefix)}</Markdown>
             </div>
           )}
         </div>
@@ -655,6 +718,8 @@ function StreamingMessage({
   segments: StreamSegment[];
   isActive: boolean;
 }) {
+  const { selectedCompany } = useCompany();
+  const prefix = selectedCompany?.issuePrefix;
   // Find the last text segment to show cursor on
   let lastTextIdx = -1;
   for (let i = segments.length - 1; i >= 0; i--) {
@@ -667,7 +732,7 @@ function StreamingMessage({
     <div className="flex gap-3 px-4 py-3">
       <div className="shrink-0 mt-0.5">
         <div className="h-6 w-6 rounded bg-sidebar-primary/20 flex items-center justify-center">
-          <Sparkles className="h-3.5 w-3.5 text-sidebar-primary" />
+          <MessageCircle className="h-3.5 w-3.5 text-sidebar-primary" />
         </div>
       </div>
       <div className="flex-1 min-w-0">
@@ -688,7 +753,7 @@ function StreamingMessage({
               const isLastText = group.index === lastTextIdx && isActive;
               return (
                 <div key={gi} className={`chat-markdown ${isLastText ? "chat-cursor" : ""}`}>
-                  <Markdown remarkPlugins={[remarkGfm]}>{group.content}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(group.content, prefix)}</Markdown>
                 </div>
               );
             }
@@ -732,8 +797,14 @@ export function Chat() {
   const setSelectedThreadId = useCallback(
     (id: string | null) => {
       setSelectedThreadIdRaw(id);
+      // Clear streaming state from the previous thread
+      setIsStreaming(false);
+      setSegments([]);
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
       if (id) {
-        setSidebarCollapsed(true);
         navigate(`/chat/${id}`, { replace: true });
       } else {
         navigate("/chat", { replace: true });
@@ -807,6 +878,14 @@ export function Chat() {
     queryKey: ["plugin-chat-agents", selectedCompanyId],
     queryFn: () =>
       fetchJson<PaperclipAgent[]>(`/api/companies/${selectedCompanyId}/agents`),
+    enabled: !!selectedCompanyId,
+  });
+
+  // Fetch issues for #-mentions
+  const { data: issues = [] } = useQuery<PaperclipIssue[]>({
+    queryKey: ["plugin-chat-issues", selectedCompanyId],
+    queryFn: () =>
+      fetchJson<PaperclipIssue[]>(`/api/companies/${selectedCompanyId}/issues?status=backlog,todo,in_progress,in_review,blocked`),
     enabled: !!selectedCompanyId,
   });
 
@@ -947,8 +1026,18 @@ export function Chat() {
     : [];
   const showAtMenu = atQuery !== null && filteredAgents.length > 0 && !isStreaming && !showSlashMenu;
 
+  // #-mention filtering — detect # at word boundary
+  const hashMatch = input.match(/#([\w-]*)$/);
+  const hashQuery = hashMatch ? hashMatch[1].toLowerCase() : null;
+  const filteredIssues = hashQuery !== null
+    ? issues.filter(
+        (i) => i.identifier.toLowerCase().includes(hashQuery) || i.title.toLowerCase().includes(hashQuery),
+      ).slice(0, 8)
+    : [];
+  const showHashMenu = hashQuery !== null && filteredIssues.length > 0 && !isStreaming && !showSlashMenu && !showAtMenu;
+
   // Reset index when filter changes
-  const activeMenuKey = showSlashMenu ? `slash:${slashQuery}` : showAtMenu ? `at:${atQuery}` : null;
+  const activeMenuKey = showSlashMenu ? `slash:${slashQuery}` : showAtMenu ? `at:${atQuery}` : showHashMenu ? `hash:${hashQuery}` : null;
   useEffect(() => {
     setSlashMenuIndex(0);
   }, [activeMenuKey]);
@@ -963,8 +1052,15 @@ export function Chat() {
 
   const selectAgent = useCallback(
     (agent: PaperclipAgent) => {
-      // Replace the @query with @AgentName
       setInput((prev) => prev.replace(/@\w*$/, `@${agent.name} `));
+      textareaRef.current?.focus();
+    },
+    [],
+  );
+
+  const selectIssue = useCallback(
+    (issue: PaperclipIssue) => {
+      setInput((prev) => prev.replace(/#[\w-]*$/, `#${issue.identifier} `));
       textareaRef.current?.focus();
     },
     [],
@@ -1046,6 +1142,25 @@ export function Chat() {
           .map((a) => `- @${a.name} (agent ID: ${a.id}, role: ${a.title || a.role || "agent"})`)
           .join("\n");
         enrichedMessage = `${trimmed}\n\n[SKILL: Agent Handoff — The user @-mentioned agent(s). Use the handoff skill: if the message contains a work request, create a task assigned to the agent. If it's a question, query their status/tasks instead.\n${agentContext}]`;
+      }
+    }
+
+    // Detect #-mentioned issues and enrich the message with context
+    const issuePattern = /#([\w-]+)/g;
+    const issueMentions: string[] = [];
+    let issueMatch;
+    while ((issueMatch = issuePattern.exec(trimmed)) !== null) {
+      issueMentions.push(issueMatch[1]);
+    }
+    if (issueMentions.length > 0) {
+      const mentionedIssues = issues.filter((i) =>
+        issueMentions.some((m) => i.identifier.toLowerCase() === m.toLowerCase()),
+      );
+      if (mentionedIssues.length > 0) {
+        const issueContext = mentionedIssues
+          .map((i) => `- #${i.identifier} (issue ID: ${i.id}, title: "${i.title}", status: ${i.status}, priority: ${i.priority || "none"})`)
+          .join("\n");
+        enrichedMessage = `${enrichedMessage}\n\n[Mentioned issues — the user referenced these issues. Use the issue IDs to fetch full details or perform actions.\n${issueContext}]`;
       }
     }
 
@@ -1168,7 +1283,7 @@ export function Chat() {
         queryClient.invalidateQueries({ queryKey: ["plugin-chat-threads"] });
       }
     }
-  }, [input, selectedThreadId, isStreaming, selectedModel, selectedCompanyId, agents, queryClient, appendToLastText, appendToLastThinking, addToolUse, resolveToolResult, addError]);
+  }, [input, selectedThreadId, isStreaming, selectedModel, selectedCompanyId, agents, issues, queryClient, appendToLastText, appendToLastThinking, addToolUse, resolveToolResult, addError]);
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const threadNotFound = !!selectedThreadId && threads.length > 0 && !selectedThread;
@@ -1265,6 +1380,46 @@ export function Chat() {
           </div>
         </div>
       )}
+
+      {/* #-issue menu */}
+      {showHashMenu && (
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-card border border-border rounded-lg shadow-xl overflow-hidden z-50">
+          <div className="px-3 py-1.5 border-b border-border">
+            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+              Issues
+            </span>
+          </div>
+          <div className="max-h-[240px] overflow-y-auto chat-scroll py-1">
+            {filteredIssues.map((issue, i) => (
+              <button
+                key={issue.id}
+                onClick={() => selectIssue(issue)}
+                onMouseEnter={() => setSlashMenuIndex(i)}
+                className={`w-full text-left px-3 py-2 flex items-center gap-3 transition-colors ${
+                  i === slashMenuIndex
+                    ? "bg-accent text-foreground"
+                    : "text-foreground/70 hover:bg-accent/50"
+                }`}
+              >
+                <span className="text-xs font-semibold text-sidebar-primary shrink-0">
+                  #{issue.identifier}
+                </span>
+                <span className="text-xs text-muted-foreground truncate flex-1">
+                  {issue.title}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+                  issue.status === "in_progress" ? "bg-blue-500/10 text-blue-400"
+                  : issue.status === "blocked" ? "bg-red-500/10 text-red-400"
+                  : issue.status === "todo" ? "bg-yellow-500/10 text-yellow-400"
+                  : "bg-muted text-muted-foreground"
+                }`}>
+                  {issue.status}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="chat-input-glow flex items-center gap-2 rounded-lg md:rounded border border-border bg-card px-3 py-3 md:py-2.5 transition-all min-h-[44px]">
         <span className="text-muted-foreground/40 text-sm select-none leading-none hidden md:inline">›</span>
         <textarea
@@ -1272,8 +1427,8 @@ export function Chat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            const menuActive = showSlashMenu || showAtMenu;
-            const menuLength = showSlashMenu ? filteredCommands.length : filteredAgents.length;
+            const menuActive = showSlashMenu || showAtMenu || showHashMenu;
+            const menuLength = showSlashMenu ? filteredCommands.length : showAtMenu ? filteredAgents.length : filteredIssues.length;
             if (menuActive) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -1289,8 +1444,10 @@ export function Chat() {
                 e.preventDefault();
                 if (showSlashMenu) {
                   selectSlashCommand(filteredCommands[slashMenuIndex]);
-                } else {
+                } else if (showAtMenu) {
                   selectAgent(filteredAgents[slashMenuIndex]);
+                } else {
+                  selectIssue(filteredIssues[slashMenuIndex]);
                 }
                 return;
               }
@@ -1372,33 +1529,16 @@ export function Chat() {
   return (
     <div className="flex absolute inset-0 overflow-hidden">
       <style>{CHAT_STYLES}</style>
-        {/* ── Overlay backdrop ── */}
-        {!sidebarCollapsed && (
-          <div
-            className="absolute inset-0 bg-black/20 z-30"
-            onClick={() => setSidebarCollapsed(true)}
-          />
-        )}
 
-        {/* ── Thread Sidebar (slide-over drawer, scoped to chat container) ── */}
-        <div className={`absolute inset-y-0 left-0 z-40 w-72 md:w-60 flex flex-col border-r border-border bg-card shadow-xl transition-transform duration-200 ease-in-out ${sidebarCollapsed ? "-translate-x-full" : "translate-x-0"}`}>
+        {/* ── Thread Sidebar (push layout) ── */}
+        <div className={`shrink-0 flex flex-col bg-card overflow-hidden transition-all duration-200 ease-in-out ${sidebarCollapsed ? "w-0" : "w-72 md:w-60 border-r border-border"}`}>
           <div className="px-3 py-2.5 md:py-2 border-b border-border flex items-center gap-2">
             <button
-              onClick={() => {
-                setSelectedThreadId(null);
-                setSidebarCollapsed(true);
-              }}
+              onClick={() => setSelectedThreadId(null)}
               className="flex-1 flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 md:py-1.5 text-sm md:text-xs font-medium text-primary-foreground hover:bg-primary/90 active:bg-primary/80 transition-colors"
             >
               <Plus className="h-4 w-4 md:h-3.5 md:w-3.5" />
               New Chat
-            </button>
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              className="h-8 w-8 md:h-7 md:w-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-              title="Close sidebar"
-            >
-              <PanelLeftClose className="h-4 w-4" />
             </button>
           </div>
 
@@ -1414,10 +1554,7 @@ export function Chat() {
                 key={thread.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => {
-                  setSelectedThreadId(thread.id);
-                  setSidebarCollapsed(true);
-                }}
+                onClick={() => setSelectedThreadId(thread.id)}
                 onDoubleClick={() => {
                   setEditingThreadId(thread.id);
                   setEditingTitle(thread.title || "");
@@ -1426,7 +1563,6 @@ export function Chat() {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     setSelectedThreadId(thread.id);
-                    setSidebarCollapsed(true);
                   }
                 }}
                 className={`chat-thread-item flex items-center gap-3 md:gap-2 mx-1 px-3 md:px-2.5 py-3.5 md:py-2 rounded cursor-pointer group focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
@@ -1505,9 +1641,22 @@ export function Chat() {
         {/* ── Chat Area (always full width) ── */}
         <div className="flex flex-1 flex-col bg-background min-w-0 overflow-hidden">
           {!selectedThreadId ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              {/* Header with sidebar toggle */}
+              <div className="flex items-center gap-3 px-4 h-12 md:h-11 border-b border-border shrink-0">
+                <button
+                  onClick={() => setSidebarCollapsed((c) => !c)}
+                  className="h-8 w-8 md:h-7 md:w-7 -ml-1 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  title={sidebarCollapsed ? "Show threads" : "Hide threads"}
+                >
+                  {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5 md:h-4 md:w-4" /> : <PanelLeftClose className="h-5 w-5 md:h-4 md:w-4" />}
+                </button>
+                <MessageCircle className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <span className="text-sm font-medium text-foreground truncate">New Chat</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
               <div className="flex flex-col items-center gap-2 mb-4">
-                <Sparkles className="h-5 w-5 text-muted-foreground/40" />
+                <MessageCircle className="h-5 w-5 text-muted-foreground/40" />
                 <h2 className="text-lg font-semibold text-foreground">What can I help with?</h2>
               </div>
 
@@ -1559,6 +1708,7 @@ export function Chat() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           ) : threadNotFound ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
@@ -1581,13 +1731,13 @@ export function Chat() {
               {/* Header */}
               <div className="flex items-center gap-3 px-4 h-12 md:h-11 border-b border-border shrink-0">
                 <button
-                  onClick={() => setSidebarCollapsed(false)}
+                  onClick={() => setSidebarCollapsed((c) => !c)}
                   className="h-8 w-8 md:h-7 md:w-7 -ml-1 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                  title="Show threads"
+                  title={sidebarCollapsed ? "Show threads" : "Hide threads"}
                 >
-                  <PanelLeftOpen className="h-5 w-5 md:h-4 md:w-4" />
+                  {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5 md:h-4 md:w-4" /> : <PanelLeftClose className="h-5 w-5 md:h-4 md:w-4" />}
                 </button>
-                <Sparkles className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <MessageCircle className="h-3.5 w-3.5 text-muted-foreground/60" />
                 {editingThreadId === selectedThreadId ? (
                   <input
                     autoFocus

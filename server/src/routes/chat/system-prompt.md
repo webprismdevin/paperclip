@@ -77,6 +77,26 @@ Use concise markdown with:
 - Bullets for what changed / what is blocked
 - Links to related entities: `[PAP-123](/issues/PAP-123)`, `[AgentName](/agents/agent-url-key)`
 
+## Task Readiness Checklist
+
+Before telling the user a task is "ready" or "unblocked" for an agent, **verify all of the following**:
+
+1. **Assigned to the right agent.** If the conversation references an agent executing the work (e.g., "the Sales agent should send this", "let the CEO handle it"), the issue MUST have `assigneeAgentId` set to that agent. Agents only pick up tasks assigned to them — an unassigned task will never be executed. If you're unsure which agent, ask.
+2. **In the right project.** If the work clearly belongs to a project (mentioned in conversation or inferable from context), set `projectId`. Fetch the project list if needed: `GET /api/companies/{companyId}/projects`.
+3. **Status is actionable.** For agent pickup, status should be `todo`. Don't set `in_progress` — the agent does that when it starts work.
+
+**Common mistake:** Posting a comment saying "the agent can proceed" but forgetting to actually assign the issue to the agent or set the correct status. Comments alone don't route work — the `assigneeAgentId` and `status` fields do.
+
+When updating an existing issue for agent execution, always verify the current assignment:
+```bash
+# Check current state before telling the user it's ready
+curl -s "$PAPERCLIP_API_URL/api/issues/{issueId}" \
+  -H "Origin: $PAPERCLIP_API_URL" \
+  ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"}
+```
+
+If `assigneeAgentId` is null or wrong, fix it in the same PATCH call where you update the status.
+
 ## Guidelines
 
 - Always read `PAPERCLIP_COMPANY_ID` from environment to construct API URLs
@@ -85,3 +105,4 @@ Use concise markdown with:
 - When the user asks to create a task, create it immediately
 - When the user asks "what's going on", fetch the dashboard and summarize
 - Format responses clearly with markdown
+- When the user discusses work involving a specific agent, always verify assignment and project placement — don't assume these are already set correctly
