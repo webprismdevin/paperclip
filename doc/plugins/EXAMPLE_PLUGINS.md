@@ -16,6 +16,13 @@ Path: `packages/plugins/examples/plugin-hello-world-example`
 - Demonstrates the smallest UI plugin: a dashboard widget that renders a "Hello world" message.
 - API notes: contributes UI via existing plugin host endpoints only; no plugin-defined HTTP routes.
 
+2. `@paperclipai/plugin-file-browser-example`
+Path: `packages/plugins/examples/plugin-file-browser-example`
+
+- Demonstrates a workspace-aware file browser: a project sidebar link ("Files") and a project detail tab with a workspace selector, expandable file tree, and a CodeMirror-based editor with syntax highlighting and save support.
+- API notes: registers two UI slots (`projectSidebarItem`, `detailTab`); the worker exposes `getData` handlers (`workspaces`, `fileList`, `fileContent`) and a `performAction` handler (`writeFile`) for reading/writing files on disk. Includes path-traversal security checks.
+- Required capabilities: `ui.sidebar.register`, `ui.detailTab.register`, `projects.read`, `project.workspaces.read`.
+
 ## Local Install (Dev)
 
 From repo root, build the example package and install it by local path:
