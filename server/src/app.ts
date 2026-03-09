@@ -24,7 +24,9 @@ import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
+import { chatRoutes } from "./routes/chat.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import { loadPlugins } from "./plugin-loader.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -112,6 +114,7 @@ export async function createApp(
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
+  api.use("/chat", chatRoutes(db, opts.deploymentMode));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
@@ -120,6 +123,10 @@ export async function createApp(
       allowedHostnames: opts.allowedHostnames,
     }),
   );
+  // Load plugins before mounting API
+  const { router: pluginRouter } = await loadPlugins(db, opts.deploymentMode);
+  api.use(pluginRouter);
+
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

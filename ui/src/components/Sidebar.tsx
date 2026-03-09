@@ -9,6 +9,7 @@ import {
   SquarePen,
   Network,
   Settings,
+  MessageCircle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -84,6 +85,7 @@ export function Sidebar() {
             badgeTone={sidebarBadges?.failedRuns ? "danger" : "default"}
             alert={(sidebarBadges?.failedRuns ?? 0) > 0}
           />
+          <SidebarNavItem to="/chat" label="Chat" icon={MessageCircle} />
         </div>
 
         <SidebarSection label="Work">
