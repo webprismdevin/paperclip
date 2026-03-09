@@ -155,6 +155,14 @@ describe("claudeDriver", () => {
     });
   });
 
+  /* ---------- buildStdinMessage ---------- */
+  describe("buildStdinMessage", () => {
+    it("returns only the user message (system prompt goes via CLI flag)", () => {
+      const result = claudeDriver.buildStdinMessage("hello", baseOpts());
+      expect(result).toBe("hello");
+    });
+  });
+
   /* ---------- isUnknownSessionError ---------- */
   describe("isUnknownSessionError", () => {
     it("detects 'no conversation found with session id'", () => {
@@ -285,6 +293,21 @@ describe("codexDriver", () => {
       expect(codexDriver.parseEvent(line)).toEqual([
         { type: "tool_result", content: "file.txt", isError: false },
       ]);
+    });
+  });
+
+  /* ---------- buildStdinMessage ---------- */
+  describe("buildStdinMessage", () => {
+    it("prepends system prompt on new session", () => {
+      const result = codexDriver.buildStdinMessage("hello", baseOpts());
+      expect(result).toContain("<system>");
+      expect(result).toContain("You are a helpful assistant.");
+      expect(result).toContain("hello");
+    });
+
+    it("returns only user message when resuming", () => {
+      const result = codexDriver.buildStdinMessage("hello", baseOpts({ sessionId: "sess-1" }));
+      expect(result).toBe("hello");
     });
   });
 
@@ -434,6 +457,21 @@ describe("openCodeDriver", () => {
 
     it("returns [] for invalid JSON", () => {
       expect(openCodeDriver.parseEvent("garbage")).toEqual([]);
+    });
+  });
+
+  /* ---------- buildStdinMessage ---------- */
+  describe("buildStdinMessage", () => {
+    it("prepends system prompt on new session", () => {
+      const result = openCodeDriver.buildStdinMessage("hello", baseOpts());
+      expect(result).toContain("<system>");
+      expect(result).toContain("You are a helpful assistant.");
+      expect(result).toContain("hello");
+    });
+
+    it("returns only user message when resuming", () => {
+      const result = openCodeDriver.buildStdinMessage("hello", baseOpts({ sessionId: "sess-1" }));
+      expect(result).toBe("hello");
     });
   });
 

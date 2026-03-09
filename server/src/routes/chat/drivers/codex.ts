@@ -71,6 +71,12 @@ export const codexDriver: ChatDriver = {
     return events;
   },
 
+  buildStdinMessage(userMessage: string, opts: ChatSpawnOpts): string {
+    // Codex has no --system-prompt flag; prepend instructions to the user message
+    if (opts.sessionId) return userMessage; // resuming — system prompt already in context
+    return `<system>\n${opts.systemPrompt}\n</system>\n\n${userMessage}`;
+  },
+
   isUnknownSessionError(stdout: string, stderr: string): boolean {
     const combined = `${stdout}\n${stderr}`.toLowerCase();
     return /unknown session|session .* not found|missing rollout path for thread/.test(combined);

@@ -30,6 +30,8 @@ export interface ChatDriver {
   buildArgs(opts: ChatSpawnOpts): string[];
   /** Parse a single JSONL line into zero or more normalized chat events */
   parseEvent(line: string): ChatEvent[];
+  /** Build the stdin payload. Drivers that lack a system-prompt CLI flag prepend it to the message. */
+  buildStdinMessage(userMessage: string, opts: ChatSpawnOpts): string;
   /** Detect unknown session errors from stdout/stderr */
   isUnknownSessionError(stdout: string, stderr: string): boolean;
 }

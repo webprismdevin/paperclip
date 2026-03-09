@@ -279,13 +279,14 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
     }
 
     // Use the driver to build args
-    const args = driver.buildArgs({
+    const spawnOpts = {
       model: model ?? "",
       sessionId: thread.session_id ?? null,
       systemPrompt,
       cwd: process.cwd(),
       env: paperclipEnv,
-    });
+    };
+    const args = driver.buildArgs(spawnOpts);
 
     const proc = spawn(driver.command, args, {
       cwd: process.cwd(),
@@ -295,8 +296,9 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
 
     activeProcesses.set(threadId, proc);
 
-    // Send prompt via stdin
-    proc.stdin.write(message);
+    // Send prompt via stdin — driver decides whether to prepend system prompt
+    const stdinPayload = driver.buildStdinMessage(message, spawnOpts);
+    proc.stdin.write(stdinPayload);
     proc.stdin.end();
 
     let sessionId: string | null = thread.session_id;

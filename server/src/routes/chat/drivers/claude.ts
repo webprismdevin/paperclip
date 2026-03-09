@@ -78,6 +78,11 @@ export const claudeDriver: ChatDriver = {
     return events;
   },
 
+  buildStdinMessage(userMessage: string, _opts: ChatSpawnOpts): string {
+    // Claude receives the system prompt via --append-system-prompt flag
+    return userMessage;
+  },
+
   isUnknownSessionError(stdout: string, stderr: string): boolean {
     const combined = `${stdout}\n${stderr}`.toLowerCase();
     return /no conversation found with session id|unknown session|session .* not found/.test(combined);
