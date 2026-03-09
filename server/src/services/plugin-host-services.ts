@@ -101,6 +101,20 @@ export function buildHostServices(
     return companyId;
   };
 
+  /**
+   * Verify that this plugin is enabled for the given company.
+   * Throws if the plugin is disabled or unavailable, preventing
+   * worker-driven access to companies that have not opted in.
+   */
+  const ensurePluginAvailableForCompany = async (companyId: string) => {
+    const availability = await registry.getCompanyAvailability(companyId, pluginId);
+    if (!availability || !availability.available) {
+      throw new Error(
+        `Plugin "${pluginKey}" is not enabled for company "${companyId}"`,
+      );
+    }
+  };
+
   const inCompany = <T extends { companyId: string | null | undefined }>(
     record: T | null | undefined,
     companyId: string,
@@ -160,6 +174,9 @@ export function buildHostServices(
 
     events: {
       async emit(params) {
+        if (params.companyId) {
+          await ensurePluginAvailableForCompany(params.companyId);
+        }
         await scopedBus.emit(params.name, params.companyId, params.payload);
       },
     },
@@ -200,8 +217,10 @@ export function buildHostServices(
 
     activity: {
       async log(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         await logActivity(db, {
-          companyId: ensureCompanyId(params.companyId),
+          companyId,
           actorType: "plugin",
           actorId: pluginId,
           action: params.message,
@@ -263,9 +282,16 @@ export function buildHostServices(
 
     companies: {
       async list(_params) {
-        return (await companies.list()) as Company[];
+        const allCompanies = (await companies.list()) as Company[];
+        const enabledCompanyIds = new Set<string>();
+        for (const company of allCompanies) {
+          const availability = await registry.getCompanyAvailability(company.id, pluginId);
+          if (availability?.available) enabledCompanyIds.add(company.id);
+        }
+        return allCompanies.filter((c) => enabledCompanyIds.has(c.id));
       },
       async get(params) {
+        await ensurePluginAvailableForCompany(params.companyId);
         return (await companies.getById(params.companyId)) as Company;
       },
     },
@@ -273,15 +299,18 @@ export function buildHostServices(
     projects: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await projects.list(companyId)) as Project[];
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const project = await projects.getById(params.projectId);
         return (inCompany(project, companyId) ? project : null) as Project | null;
       },
       async listWorkspaces(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const project = await projects.getById(params.projectId);
         if (!inCompany(project, companyId)) return [];
         const rows = await projects.listWorkspaces(params.projectId);
@@ -301,6 +330,7 @@ export function buildHostServices(
       },
       async getPrimaryWorkspace(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const project = await projects.getById(params.projectId);
         if (!inCompany(project, companyId)) return null;
         const row = await projects.getPrimaryWorkspace(params.projectId);
@@ -320,6 +350,7 @@ export function buildHostServices(
 
       async getWorkspaceForIssue(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const issue = await issues.getById(params.issueId);
         if (!inCompany(issue, companyId)) return null;
         const projectId = (issue as Record<string, unknown>).projectId as string | null;
@@ -345,29 +376,35 @@ export function buildHostServices(
     issues: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await issues.list(companyId, params as any)) as Issue[];
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const issue = await issues.getById(params.issueId);
         return (inCompany(issue, companyId) ? issue : null) as Issue | null;
       },
       async create(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await issues.create(companyId, params as any)) as Issue;
       },
       async update(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         requireInCompany("Issue", await issues.getById(params.issueId), companyId);
         return (await issues.update(params.issueId, params.patch as any)) as Issue;
       },
       async listComments(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         if (!inCompany(await issues.getById(params.issueId), companyId)) return [];
         return (await issues.listComments(params.issueId)) as IssueComment[];
       },
       async createComment(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         requireInCompany("Issue", await issues.getById(params.issueId), companyId);
         return (await issues.addComment(
           params.issueId,
@@ -380,29 +417,34 @@ export function buildHostServices(
     agents: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await agents.list(companyId, {
           status: params.status as any,
         })) as Agent[];
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         return (inCompany(agent, companyId) ? agent : null) as Agent | null;
       },
       async pause(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
         return (await agents.pause(params.agentId)) as Agent;
       },
       async resume(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
         return (await agents.resume(params.agentId)) as Agent;
       },
       async invoke(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
         const run = await heartbeat.wakeup(params.agentId, {
@@ -421,6 +463,7 @@ export function buildHostServices(
     goals: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await goals.list(
           companyId,
           params.level as any,
@@ -429,11 +472,13 @@ export function buildHostServices(
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const goal = await goals.getById(params.goalId);
         return (inCompany(goal, companyId) ? goal : null) as Goal | null;
       },
       async create(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         return (await goals.create(companyId, {
           title: params.title,
           description: params.description,
@@ -445,6 +490,7 @@ export function buildHostServices(
       },
       async update(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         requireInCompany("Goal", await goals.getById(params.goalId), companyId);
         return (await goals.update(params.goalId, params.patch as any)) as Goal;
       },
@@ -453,6 +499,7 @@ export function buildHostServices(
     agentSessions: {
       async create(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
         const taskKey = params.taskKey ?? `plugin:${pluginKey}:session:${randomUUID()}`;
@@ -483,6 +530,7 @@ export function buildHostServices(
 
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const rows = await db
           .select()
           .from(agentTaskSessionsTable)
@@ -506,6 +554,7 @@ export function buildHostServices(
 
       async sendMessage(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
 
         // Verify session exists and belongs to this plugin
         const session = await db
@@ -586,6 +635,7 @@ export function buildHostServices(
 
       async close(params) {
         const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const deleted = await db
           .delete(agentTaskSessionsTable)
           .where(

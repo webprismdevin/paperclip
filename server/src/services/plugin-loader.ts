@@ -1426,13 +1426,20 @@ export function pluginLoader(
         throw new Error(`Plugin not found: ${pluginId}`);
       }
 
-      // If the plugin is in 'installed' status, transition it to 'ready' first
+      // If the plugin is in 'installed' status, transition it to 'ready' first.
+      // lifecycleManager.load() transitions the status AND activates the plugin
+      // via activateReadyPlugin() → loadSingle() (recursive call with 'ready'
+      // status) → activatePlugin(). We must NOT call activatePlugin() again here,
+      // as that would double-start the worker and duplicate registrations.
       if (plugin.status === "installed") {
         await runtimeServices.lifecycleManager.load(pluginId);
-        // Re-read the plugin after the status transition
         const updated = (await registry.getById(pluginId)) as PluginRecord | null;
         if (!updated) throw new Error(`Plugin not found after status update: ${pluginId}`);
-        return activatePlugin(updated);
+        return {
+          plugin: updated,
+          success: true,
+          registered: { worker: true, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0 },
+        };
       }
 
       if (plugin.status !== "ready") {

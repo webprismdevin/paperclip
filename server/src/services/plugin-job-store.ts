@@ -264,6 +264,23 @@ export function pluginJobStore(db: Db) {
     },
 
     /**
+     * Fetch a single job by ID, scoped to a specific plugin.
+     *
+     * Returns `null` if the job does not exist or does not belong to the
+     * given plugin — callers should treat both cases as "not found".
+     */
+    async getJobByIdForPlugin(
+      pluginId: string,
+      jobId: string,
+    ): Promise<(typeof pluginJobs.$inferSelect) | null> {
+      const rows = await db
+        .select()
+        .from(pluginJobs)
+        .where(and(eq(pluginJobs.id, jobId), eq(pluginJobs.pluginId, pluginId)));
+      return rows[0] ?? null;
+    },
+
+    /**
      * Update a job's status.
      *
      * @param jobId - UUID of the job row

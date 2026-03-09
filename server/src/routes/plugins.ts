@@ -46,6 +46,7 @@ import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js
 import type { ToolRunContext } from "@paperclipai/plugin-sdk";
 import { JsonRpcCallError, PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { validateInstanceConfig } from "../services/plugin-config-validator.js";
 
 /** UI slot declaration extracted from plugin manifest */
 type PluginUiSlotDeclaration = NonNullable<NonNullable<PaperclipPluginManifestV1["ui"]>["slots"]>[number];
@@ -1519,6 +1520,20 @@ export function pluginRoutes(
       return;
     }
 
+    // Validate configJson against the plugin's instanceConfigSchema (if declared).
+    // This ensures CLI/API callers get the same validation the UI performs client-side.
+    const schema = plugin.manifestJson?.instanceConfigSchema;
+    if (schema && Object.keys(schema).length > 0) {
+      const validation = validateInstanceConfig(body.configJson, schema);
+      if (!validation.valid) {
+        res.status(400).json({
+          error: "Configuration does not match the plugin's instanceConfigSchema",
+          fieldErrors: validation.errors,
+        });
+        return;
+      }
+    }
+
     try {
       const result = await registry.upsertConfig(plugin.id, {
         configJson: body.configJson,
@@ -1606,6 +1621,19 @@ export function pluginRoutes(
     if (!body?.configJson || typeof body.configJson !== "object") {
       res.status(400).json({ error: '"configJson" is required and must be an object' });
       return;
+    }
+
+    // Fast schema-level rejection before hitting the worker RPC.
+    const schema = plugin.manifestJson?.instanceConfigSchema;
+    if (schema && Object.keys(schema).length > 0) {
+      const validation = validateInstanceConfig(body.configJson, schema);
+      if (!validation.valid) {
+        res.status(400).json({
+          error: "Configuration does not match the plugin's instanceConfigSchema",
+          fieldErrors: validation.errors,
+        });
+        return;
+      }
     }
 
     try {
@@ -1722,6 +1750,12 @@ export function pluginRoutes(
       return;
     }
 
+    const job = await jobDeps.jobStore.getJobByIdForPlugin(plugin.id, jobId);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
     if (isNaN(limit) || limit < 1 || limit > 500) {
       res.status(400).json({ error: "limit must be a number between 1 and 500" });
@@ -1761,6 +1795,12 @@ export function pluginRoutes(
     const plugin = await resolvePlugin(registry, pluginId);
     if (!plugin) {
       res.status(404).json({ error: "Plugin not found" });
+      return;
+    }
+
+    const job = await jobDeps.jobStore.getJobByIdForPlugin(plugin.id, jobId);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
       return;
     }
 
@@ -1862,10 +1902,11 @@ export function pluginRoutes(
       }
     }
 
-    // Express 5 may give undefined body when no Content-Type is set
-    const rawBody = (req.body as Record<string, unknown> | undefined)
-      ? JSON.stringify(req.body)
-      : "";
+    // Use the raw buffer stashed by the express.json() `verify` callback.
+    // This preserves the exact bytes the provider signed, whereas
+    // JSON.stringify(req.body) would re-serialize and break HMAC verification.
+    const stashedRaw = (req as unknown as { rawBody?: Buffer }).rawBody;
+    const rawBody = stashedRaw ? stashedRaw.toString("utf-8") : "";
     const parsedBody = req.body as unknown;
     const payload = (req.body as Record<string, unknown> | undefined) ?? {};
 

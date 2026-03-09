@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HelloWorldDashboardWidget } from "../../../packages/plugins/examples/plugin-hello-world-example/src/ui/index.js";
+import { HelloWorldDashboardWidget } from "./index.js";
 
 describe("HelloWorldDashboardWidget", () => {
   it("renders the hello world widget copy and company context", () => {

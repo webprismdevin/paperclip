@@ -135,7 +135,11 @@ function createWebhookApp() {
     workerManager: mockWorkerManager as any,
   };
   const app = express();
-  app.use(express.json());
+  app.use(express.json({
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody: Buffer }).rawBody = buf;
+    },
+  }));
   app.use((req, _res, next) => {
     req.actor = {
       type: "board",
@@ -1377,7 +1381,11 @@ describe("plugin routes", () => {
       // Use an agent actor to prove it's not rejected with 403
       const webhookDeps = { workerManager: mockWorkerManager as any };
       const app = express();
-      app.use(express.json());
+      app.use(express.json({
+        verify: (req, _res, buf) => {
+          (req as unknown as { rawBody: Buffer }).rawBody = buf;
+        },
+      }));
       app.use((req, _res, next) => {
         req.actor = {
           type: "agent",

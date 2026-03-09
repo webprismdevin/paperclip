@@ -91,7 +91,15 @@ export async function createApp(
 ) {
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({
+    verify: (req, _res, buf) => {
+      // Stash the raw request body buffer for webhook signature verification.
+      // Re-serializing parsed JSON (JSON.stringify(req.body)) can produce bytes
+      // that differ from the original payload, breaking HMAC verification for
+      // providers like Stripe, GitHub, and Linear.
+      (req as unknown as { rawBody: Buffer }).rawBody = buf;
+    },
+  }));
   app.use(httpLogger);
   const privateHostnameGateEnabled =
     opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
