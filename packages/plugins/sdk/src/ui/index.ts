@@ -49,11 +49,13 @@
  * - `usePluginData(key, params)` — fetch data from the worker's `getData` handler
  * - `usePluginAction(key)` — get a callable that invokes the worker's `performAction` handler
  * - `useHostContext()` — read the current active company, project, entity, and user IDs
+ * - `usePluginStream(channel)` — subscribe to real-time SSE events from the worker
  */
 export {
   usePluginData,
   usePluginAction,
   useHostContext,
+  usePluginStream,
 } from "./hooks.js";
 
 // Bridge error and host context types
@@ -70,6 +72,7 @@ export type {
   PluginLauncherRenderEnvironment,
   PluginDataResult,
   PluginActionFn,
+  PluginStreamResult,
 } from "./types.js";
 
 // Slot component prop interfaces

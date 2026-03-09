@@ -1330,6 +1330,7 @@ describe("startWorkerRpcHost", () => {
       expect((eventResponse as JsonRpcSuccessResponse).result).toBeNull();
     });
   });
+
 });
 
 // ---------------------------------------------------------------------------

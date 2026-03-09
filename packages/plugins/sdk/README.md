@@ -15,7 +15,7 @@ Reference: `doc/plugins/PLUGIN_SPEC.md`
 | Import | Purpose |
 |--------|--------|
 | `@paperclipai/plugin-sdk` | Worker entry: `definePlugin`, `runWorker`, context types, protocol helpers |
-| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `useHostContext`, shared components |
+| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `usePluginStream`, `useHostContext`, shared components |
 | `@paperclipai/plugin-sdk/ui/hooks` | Hooks only |
 | `@paperclipai/plugin-sdk/ui/types` | UI types and slot prop interfaces |
 | `@paperclipai/plugin-sdk/ui/components` | `MetricCard`, `StatusBadge`, `Spinner`, `ErrorBoundary`, etc. |
@@ -86,7 +86,7 @@ runWorker(plugin, import.meta.url);
 | `onValidateConfig?(config)` | Optional. Return `{ ok, warnings?, errors? }` for settings UI / Test Connection. |
 | `onWebhook?(input)` | Optional. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`; required if webhooks declared. |
 
-**Context (`ctx`) in setup:** `config`, `events`, `jobs`, `launchers`, `http`, `secrets`, `assets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `data`, `actions`, `tools`, `metrics`, `logger`, `manifest`. All host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `events`, `jobs`, `launchers`, `http`, `secrets`, `assets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. All host APIs are capability-gated; declare capabilities in the manifest.
 
 **Agents:** `ctx.agents.invoke(agentId, companyId, opts)` for one-shot invocation. `ctx.agents.sessions` for two-way chat: `create`, `list`, `sendMessage` (with streaming `onEvent` callback), `close`. See the [Plugin Authoring Guide](../../doc/plugins/PLUGIN_AUTHORING_GUIDE.md#agent-sessions-two-way-chat) for details.
 
@@ -413,6 +413,34 @@ export function IssueLinearLink({ context }: PluginDetailTabProps) {
 }
 ```
 
+#### `usePluginStream<T>(channel, options?)`
+
+Subscribes to a real-time event stream pushed from the plugin worker via SSE. The worker pushes events using `ctx.streams.emit(channel, event)` and the hook receives them as they arrive. Returns `{ events, lastEvent, connecting, connected, error, close }`.
+
+```tsx
+import { usePluginStream } from "@paperclipai/plugin-sdk/ui";
+
+interface ChatToken {
+  text: string;
+}
+
+export function ChatMessages({ context }: PluginWidgetProps) {
+  const { events, connected, close } = usePluginStream<ChatToken>("chat-stream", {
+    companyId: context.companyId ?? undefined,
+  });
+
+  return (
+    <div>
+      {events.map((e, i) => <span key={i}>{e.text}</span>)}
+      {connected && <span className="pulse" />}
+      <button onClick={close}>Stop</button>
+    </div>
+  );
+}
+```
+
+The SSE connection targets `GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=...`. The host bridge manages the EventSource lifecycle; `close()` terminates the connection.
+
 ### Shared components reference
 
 All components are provided by the host at runtime and match the host design tokens. Import from `@paperclipai/plugin-sdk/ui` or `@paperclipai/plugin-sdk/ui/components`.
@@ -715,6 +743,127 @@ export function SyncToolbarButton() {
 ```
 
 Prefer deep-linkable tabs and pages for primary workflows. Reserve plugin-owned modals for confirmations, pickers, and compact editors.
+
+## Real-time streaming (`ctx.streams`)
+
+Plugins can push real-time events from the worker to the UI using server-sent events (SSE). This is useful for streaming LLM tokens, live sync progress, or any push-based data.
+
+### Worker side
+
+In `setup()`, use `ctx.streams` to open a channel, emit events, and close when done:
+
+```ts
+const plugin = definePlugin({
+  async setup(ctx) {
+    ctx.actions.register("chat", async (params) => {
+      const companyId = params.companyId as string;
+      ctx.streams.open("chat-stream", companyId);
+
+      for await (const token of streamFromLLM(params.prompt as string)) {
+        ctx.streams.emit("chat-stream", { text: token });
+      }
+
+      ctx.streams.close("chat-stream");
+      return { ok: true };
+    });
+  },
+});
+```
+
+**API:**
+
+| Method | Description |
+|--------|-------------|
+| `ctx.streams.open(channel, companyId)` | Open a named stream channel and associate it with a company. Sends a `streams.open` notification to the host. |
+| `ctx.streams.emit(channel, event)` | Push an event to the channel. The `companyId` is automatically resolved from the prior `open()` call. |
+| `ctx.streams.close(channel)` | Close the channel and clear the company mapping. Sends a `streams.close` notification. |
+
+Stream notifications are fire-and-forget JSON-RPC messages (no `id` field). They are sent via `notifyHost()` synchronously during handler execution.
+
+### UI side
+
+Use the `usePluginStream` hook (see [Hooks reference](#usepluginstreamtchannel-options) above) to subscribe to events from the UI.
+
+### Host-side architecture
+
+The host maintains an in-memory `PluginStreamBus` that fans out worker notifications to connected SSE clients:
+
+1. Worker emits `streams.emit` notification via stdout
+2. Host (`plugin-worker-manager`) receives the notification and publishes to `PluginStreamBus`
+3. SSE endpoint (`GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=...`) subscribes to the bus and writes events to the response
+
+The bus is keyed by `pluginId:channel:companyId`, so multiple UI clients can subscribe to the same stream independently.
+
+### Streaming agent responses to the UI
+
+`ctx.streams` and `ctx.agents.sessions` are complementary. The worker sits between them, relaying agent events to the browser in real time:
+
+```
+UI ──usePluginAction──▶ Worker ──sessions.sendMessage──▶ Agent
+UI ◀──usePluginStream── Worker ◀──onEvent callback────── Agent
+```
+
+The agent doesn't know about streams — the worker decides what to relay. Encode the agent ID in the channel name to scope streams per agent.
+
+**Worker:**
+
+```ts
+ctx.actions.register("ask-agent", async (params) => {
+  const { agentId, companyId, prompt } = params as {
+    agentId: string; companyId: string; prompt: string;
+  };
+
+  const channel = `agent:${agentId}`;
+  ctx.streams.open(channel, companyId);
+
+  const session = await ctx.agents.sessions.create(agentId, companyId);
+
+  await ctx.agents.sessions.sendMessage(session.sessionId, companyId, {
+    prompt,
+    onEvent: (event) => {
+      ctx.streams.emit(channel, {
+        type: event.eventType,       // "chunk" | "done" | "error"
+        text: event.message ?? "",
+      });
+    },
+  });
+
+  ctx.streams.close(channel);
+  return { sessionId: session.sessionId };
+});
+```
+
+**UI:**
+
+```tsx
+import { useState } from "react";
+import { usePluginAction, usePluginStream } from "@paperclipai/plugin-sdk/ui";
+
+interface AgentEvent {
+  type: "chunk" | "done" | "error";
+  text: string;
+}
+
+export function AgentChat({ agentId, companyId }: { agentId: string; companyId: string }) {
+  const askAgent = usePluginAction("ask-agent");
+  const { events, connected, close } = usePluginStream<AgentEvent>(`agent:${agentId}`, { companyId });
+  const [prompt, setPrompt] = useState("");
+
+  async function send() {
+    setPrompt("");
+    await askAgent({ agentId, companyId, prompt });
+  }
+
+  return (
+    <div>
+      <div>{events.filter(e => e.type === "chunk").map((e, i) => <span key={i}>{e.text}</span>)}</div>
+      <input value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+      <button onClick={send}>Send</button>
+      {connected && <button onClick={close}>Stop</button>}
+    </div>
+  );
+}
+```
 
 ## Agent sessions (two-way chat)
 

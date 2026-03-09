@@ -968,6 +968,54 @@ export interface PluginGoalsClient {
 }
 
 // ---------------------------------------------------------------------------
+// Streaming (worker → UI push channel)
+// ---------------------------------------------------------------------------
+
+/**
+ * `ctx.streams` — push real-time events from the worker to the plugin UI.
+ *
+ * The worker opens a named channel, emits events on it, and closes it when
+ * done. On the UI side, `usePluginStream(channel)` receives these events in
+ * real time via SSE.
+ *
+ * Streams are scoped to `(pluginId, channel, companyId)`. Multiple UI clients
+ * can subscribe to the same channel concurrently.
+ *
+ * @example
+ * ```ts
+ * // Worker: stream chat tokens to the UI
+ * ctx.streams.open("chat", companyId);
+ * for await (const token of tokenStream) {
+ *   ctx.streams.emit("chat", { type: "token", text: token });
+ * }
+ * ctx.streams.close("chat");
+ * ```
+ *
+ * @see usePluginStream in `@paperclipai/plugin-sdk/ui`
+ */
+export interface PluginStreamsClient {
+  /**
+   * Open a named stream channel. Optional — `emit()` implicitly opens if needed.
+   * Sends a `stream:open` event to connected UI clients.
+   */
+  open(channel: string, companyId: string): void;
+
+  /**
+   * Push an event to all UI clients subscribed to this channel.
+   *
+   * @param channel - Stream channel name (e.g. `"chat"`, `"logs"`)
+   * @param event - JSON-serializable event payload
+   */
+  emit(channel: string, event: unknown): void;
+
+  /**
+   * Close a stream channel. Sends a `stream:close` event to connected UI
+   * clients so they know no more events will arrive.
+   */
+  close(channel: string): void;
+}
+
+// ---------------------------------------------------------------------------
 // Full plugin context
 // ---------------------------------------------------------------------------
 
@@ -1052,6 +1100,9 @@ export interface PluginContext {
 
   /** Register performAction handlers for the plugin's UI components. */
   actions: PluginActionsClient;
+
+  /** Push real-time events from the worker to the plugin UI via SSE. */
+  streams: PluginStreamsClient;
 
   /** Register agent tool handlers. Requires `agent.tools.register`. */
   tools: PluginToolsClient;

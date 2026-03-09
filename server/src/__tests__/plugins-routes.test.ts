@@ -8,6 +8,8 @@ const registry = {
   listByStatus: vi.fn(),
   getById: vi.fn(),
   getByKey: vi.fn(),
+  getConfig: vi.fn(),
+  upsertConfig: vi.fn(),
   listCompanyAvailability: vi.fn(),
   getCompanyAvailability: vi.fn(),
   updateCompanyAvailability: vi.fn(),
@@ -110,7 +112,7 @@ function createApp(
           source: "session",
           userId: "u_board",
           isInstanceAdmin: options?.isInstanceAdmin ?? true,
-          companyIds: options?.companyIds ?? [],
+          companyIds: options?.companyIds ?? ["c1"],
         }
       : {
           type: "agent",
@@ -193,6 +195,15 @@ describe("plugin routes", () => {
     registry.listByStatus.mockResolvedValue([]);
     registry.getById.mockResolvedValue(null);
     registry.getByKey.mockResolvedValue(null);
+    registry.getConfig.mockResolvedValue(null);
+    registry.upsertConfig.mockResolvedValue({
+      id: "cfg1",
+      pluginId: "p1",
+      configJson: {},
+      lastError: null,
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+    });
     registry.listCompanyAvailability.mockResolvedValue([]);
     registry.getCompanyAvailability.mockResolvedValue({
       companyId: "c1",
@@ -848,6 +859,13 @@ describe("plugin routes", () => {
         version: "1.0.0",
       });
       expect(registry.seedEnabledForAllCompanies).toHaveBeenCalledWith("p1");
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.installed",
+        entityType: "plugin",
+        entityId: "p1",
+        actorType: "user",
+      }));
     });
 
     it("installs local path successfully", async () => {
@@ -868,6 +886,14 @@ describe("plugin routes", () => {
         localPath: "./my-plugin",
       });
       expect(registry.seedEnabledForAllCompanies).toHaveBeenCalledWith("p1");
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.installed",
+        entityType: "plugin",
+        details: expect.objectContaining({
+          source: "local_path",
+        }),
+      }));
     });
 
     it("rejects missing packageName", async () => {
@@ -968,6 +994,15 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.unload).toHaveBeenCalledWith("p1", false);
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.uninstalled",
+        entityType: "plugin",
+        entityId: "p1",
+        details: expect.objectContaining({
+          purge: false,
+        }),
+      }));
     });
 
     it("uninstalls plugin with purge", async () => {
@@ -979,6 +1014,14 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.unload).toHaveBeenCalledWith("p1", true);
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.uninstalled",
+        entityType: "plugin",
+        details: expect.objectContaining({
+          purge: true,
+        }),
+      }));
     });
 
     it("resolves scoped plugin key without UUID lookup", async () => {
@@ -1020,6 +1063,12 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.enable).toHaveBeenCalledWith("p1");
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.enabled",
+        entityType: "plugin",
+        entityId: "p1",
+      }));
     });
 
     it("returns 404 if plugin not found", async () => {
@@ -1047,6 +1096,12 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.disable).toHaveBeenCalledWith("p1", undefined);
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.disabled",
+        entityType: "plugin",
+        entityId: "p1",
+      }));
     });
 
     it("disables a plugin with reason", async () => {
@@ -1060,6 +1115,14 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.disable).toHaveBeenCalledWith("p1", "Maintenance");
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.disabled",
+        entityType: "plugin",
+        details: expect.objectContaining({
+          reason: "Maintenance",
+        }),
+      }));
     });
 
     it("returns 404 if plugin not found", async () => {
@@ -1140,18 +1203,35 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(200);
       expect(lifecycle.upgrade).toHaveBeenCalledWith("p1", "1.1.0");
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.upgraded",
+        entityType: "plugin",
+        details: expect.objectContaining({
+          previousVersion: "1.0.0",
+          version: "1.1.0",
+          targetVersion: "1.1.0",
+        }),
+      }));
     });
 
     it("upgrades to latest without specifying version", async () => {
       registry.getById.mockResolvedValue(createMockPlugin({ id: "p1", status: "ready" }));
       registry.getByKey.mockResolvedValue(null);
-      lifecycle.upgrade.mockResolvedValue(createMockPlugin({ id: "p1" }));      const app = createApp("board");
+      lifecycle.upgrade.mockResolvedValue(createMockPlugin({ id: "p1" }));
+
+      const app = createApp("board");
       const res = await request(app)
         .post("/plugins/p1/upgrade")
         .send({});
 
       expect(res.status).toBe(200);
       expect(lifecycle.upgrade).toHaveBeenCalledWith("p1", undefined);
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.upgraded",
+        entityType: "plugin",
+      }));
     });
 
     it("returns 404 if plugin not found", async () => {
@@ -1165,6 +1245,49 @@ describe("plugin routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body).toMatchObject({ error: "Plugin not found" });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /plugins/:pluginId/config - Save plugin config
+  // ---------------------------------------------------------------------------
+  describe("POST /plugins/:pluginId/config", () => {
+    it("saves plugin config and logs a redaction-safe audit entry", async () => {
+      registry.getById.mockResolvedValueOnce(createMockPlugin({ id: "p1" }));
+      registry.upsertConfig.mockResolvedValueOnce({
+        id: "cfg1",
+        pluginId: "p1",
+        configJson: { apiToken: "secret", enabled: true },
+        lastError: null,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      });
+
+      const app = createApp("board");
+      const res = await request(app)
+        .post("/plugins/p1/config")
+        .send({ configJson: { apiToken: "secret", enabled: true } });
+
+      expect(res.status).toBe(200);
+      expect(registry.upsertConfig).toHaveBeenCalledWith("p1", {
+        configJson: { apiToken: "secret", enabled: true },
+      });
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        companyId: "c1",
+        action: "plugin.config.updated",
+        entityType: "plugin",
+        entityId: "p1",
+        details: expect.objectContaining({
+          pluginId: "p1",
+          pluginKey: "acme.test",
+          configKeyCount: 2,
+        }),
+      }));
+      expect(logActivity).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        details: expect.objectContaining({
+          configJson: expect.anything(),
+        }),
+      }));
     });
   });
 

@@ -38,6 +38,7 @@ import { buildHostServices } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
 import { subscribeDomainEvents, publishGlobalLiveEvent } from "./services/index.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
+import { pluginRegistryService } from "./services/plugin-registry.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -337,7 +338,11 @@ export async function createApp(
   });
 
   // Dev watcher — watches local-path plugins for file changes and restarts workers
-  const devWatcher = createPluginDevWatcher(lifecycle);
+  const pluginRegistry = pluginRegistryService(db);
+  const devWatcher = createPluginDevWatcher(
+    lifecycle,
+    async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
+  );
 
   // Load and activate all plugins that are in 'ready' status, then start
   // watching any local-path plugins for file changes.

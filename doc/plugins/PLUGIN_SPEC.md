@@ -25,7 +25,8 @@ The following spec sections are implemented on `feature/plugins`:
 | §17 Scheduled Jobs | Done | `server/src/services/plugin-job-scheduler.ts`, `cron.ts`, `plugin-job-store.ts` |
 | §18 Webhooks | Done | `server/src/routes/plugins.ts` (webhook ingestion route) |
 | §19 UI Extension Model | Done | `ui/src/plugins/slots.tsx`, `bridge.ts`, `bridge-init.ts` |
-| §19.8 Plugin Settings UI | Done | `ui/src/components/JsonSchemaForm.tsx`, `ui/src/pages/PluginSettings.tsx` |
+| §19.8 Real-Time Streaming | Done | `packages/plugins/sdk/src/worker-rpc-host.ts` (ctx.streams), `server/src/services/plugin-stream-bus.ts`, `server/src/routes/plugins.ts` (SSE endpoint), `packages/plugins/sdk/src/ui/hooks.ts` (usePluginStream) |
+| §19.9 Plugin Settings UI | Done | `ui/src/components/JsonSchemaForm.tsx`, `ui/src/pages/PluginSettings.tsx` |
 | §21 Persistence | Done | `packages/db/src/schema/plugins.ts` and related tables |
 | §22 Secrets | Done | `server/src/services/plugin-secrets-handler.ts` |
 | §24 Operator UX | Done | `ui/src/pages/PluginManager.tsx`, `PluginSettings.tsx` |
@@ -548,6 +549,14 @@ Optional methods:
 - `performAction(input)`
 - `executeTool(input)`
 
+Worker-to-host notifications (fire-and-forget, no `id`):
+
+- `streams.open` — worker opened a stream channel
+- `streams.emit` — worker pushed an event to a stream channel
+- `streams.close` — worker closed a stream channel
+
+See §19.8 for the full streaming specification.
+
 ### 13.1 `initialize`
 
 Called once on worker startup.
@@ -746,6 +755,11 @@ export interface PluginContext {
   };
   actions: {
     register(key: string, handler: (params: Record<string, unknown>) => Promise<unknown>): void;
+  };
+  streams: {
+    open(channel: string, companyId: string): void;
+    emit(channel: string, event: unknown): void;
+    close(channel: string): void;
   };
   tools: {
     register(name: string, input: PluginToolDeclaration, fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>): void;
@@ -1076,7 +1090,7 @@ export function DashboardWidget({ context }: PluginWidgetProps) {
 
 The SDK includes a `ui` subpath export that plugin frontends import. This subpath provides:
 
-- **Bridge hooks**: `usePluginData(key, params)`, `usePluginAction(key)`, `useHostContext()`
+- **Bridge hooks**: `usePluginData(key, params)`, `usePluginAction(key)`, `usePluginStream(channel, options)`, `useHostContext()`
 - **Design tokens**: colors, spacing, typography, shadows matching the host theme
 - **Shared components**: `MetricCard`, `StatusBadge`, `DataTable`, `LogView`, `ActionBar`, `Spinner`, etc.
 - **Type definitions**: `PluginPageProps`, `PluginWidgetProps`, `PluginDetailTabProps`
@@ -1262,7 +1276,96 @@ Error codes:
 
 The `@paperclipai/plugin-sdk/ui` subpath should also export an `ErrorBoundary` component that plugin authors can use to catch rendering errors without crashing the host page.
 
-## 19.8 Plugin Settings UI
+## 19.8 Real-Time Streaming
+
+Plugins can push real-time events from the worker process to the UI using server-sent events (SSE). This enables use cases like streaming LLM tokens, live sync progress, and push-based notifications without polling.
+
+### 19.8.1 Worker-Side API (`ctx.streams`)
+
+The plugin context exposes a `streams` client:
+
+```ts
+interface PluginStreamsClient {
+  /** Open a named stream channel scoped to a company. */
+  open(channel: string, companyId: string): void;
+  /** Push an event to the channel. companyId is resolved from the prior open(). */
+  emit(channel: string, event: unknown): void;
+  /** Close the channel and clear the company mapping. */
+  close(channel: string): void;
+}
+```
+
+Stream operations send fire-and-forget JSON-RPC notifications (no `id` field) to the host via stdout. The worker maintains a per-channel → companyId mapping so that `emit()` and `close()` do not require `companyId` each time.
+
+### 19.8.2 Worker-to-Host Stream Notifications
+
+Three notification methods are defined:
+
+| Notification | Params | Description |
+|-------------|--------|-------------|
+| `streams.open` | `{ channel, companyId }` | Worker opened a new stream channel |
+| `streams.emit` | `{ channel, companyId, event }` | Worker pushed an event to a channel |
+| `streams.close` | `{ channel, companyId }` | Worker closed a stream channel |
+
+These are defined in the protocol as `WorkerToHostNotifications`:
+
+```ts
+interface WorkerToHostNotifications {
+  "streams.emit": { channel: string; companyId: string; event: unknown };
+  "streams.open": { channel: string; companyId: string };
+  "streams.close": { channel: string; companyId: string };
+}
+```
+
+### 19.8.3 Host-Side SSE Bridge
+
+The host exposes an SSE endpoint for UI clients:
+
+```
+GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=<companyId>
+```
+
+**Behavior:**
+
+1. Validates that the plugin exists and the user has access to the specified company
+2. Sets SSE response headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`)
+3. Subscribes to the in-memory `PluginStreamBus` keyed by `pluginId:channel:companyId`
+4. Writes each event as `data: <JSON>\n\n` (with optional `event:` field for non-message types)
+5. Unsubscribes when the client disconnects
+
+The `PluginStreamBus` is an in-memory pub/sub bus that fans out worker notifications to all connected SSE clients for a given key.
+
+### 19.8.4 UI-Side Hook (`usePluginStream`)
+
+The SDK provides a React hook that opens an EventSource to the SSE endpoint:
+
+```ts
+function usePluginStream<T>(
+  channel: string,
+  options?: { companyId?: string },
+): PluginStreamResult<T>;
+
+interface PluginStreamResult<T> {
+  events: T[];
+  lastEvent: T | null;
+  connecting: boolean;
+  connected: boolean;
+  error: Error | null;
+  close(): void;
+}
+```
+
+The hook accumulates events in arrival order. Call `close()` to terminate the SSE connection.
+
+### 19.8.5 Typical Flow
+
+1. UI calls `usePluginAction("chat")({ prompt, companyId })` to trigger the worker
+2. Worker calls `ctx.streams.open("chat-stream", companyId)` then emits tokens via `ctx.streams.emit("chat-stream", { text })`
+3. Host receives `streams.emit` notifications, publishes to `PluginStreamBus`
+4. UI's `usePluginStream("chat-stream", { companyId })` receives events via SSE in real time
+5. Worker calls `ctx.streams.close("chat-stream")` when done
+
+## 19.9 Plugin Settings UI
 
 Each plugin that declares an `instanceConfigSchema` in its manifest gets an auto-generated settings form at `/settings/plugins/:pluginId`. The host renders the form from the JSON Schema.
 

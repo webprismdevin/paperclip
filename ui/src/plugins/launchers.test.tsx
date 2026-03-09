@@ -441,6 +441,10 @@ describe("plugin launcher runtime", () => {
     trigger!.focus();
     trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushEffects();
+    // Extra flush to ensure SyncModal's useEffect has registered close handlers.
+    // React 18 schedules effects via MessageChannel which may not align with
+    // the setTimeout-based flush above on every run.
+    await flushEffects();
 
     const backdrop = document.querySelector('[aria-hidden="true"]');
     expect(backdrop).not.toBeNull();

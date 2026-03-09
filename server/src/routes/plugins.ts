@@ -19,10 +19,10 @@
 
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { and, desc, eq, gte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { pluginLogs, pluginWebhookDeliveries } from "@paperclipai/db";
+import { companies, pluginLogs, pluginWebhookDeliveries } from "@paperclipai/db";
 import type {
   PluginStatus,
   PaperclipPluginManifestV1,
@@ -42,6 +42,7 @@ import { publishGlobalLiveEvent } from "../services/live-events.js";
 import type { PluginJobScheduler } from "../services/plugin-job-scheduler.js";
 import type { PluginJobStore } from "../services/plugin-job-store.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import type { ToolRunContext } from "@paperclipai/plugin-sdk";
 import { JsonRpcCallError, PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
@@ -201,6 +202,8 @@ export interface PluginRouteToolDeps {
 export interface PluginRouteBridgeDeps {
   /** The worker manager for dispatching getData/performAction RPC calls. */
   workerManager: PluginWorkerManager;
+  /** Optional stream bus for SSE push from worker to UI. */
+  streamBus?: PluginStreamBus;
 }
 
 /** Request body for POST /api/plugins/tools/execute */
@@ -246,6 +249,7 @@ interface PluginToolExecuteRequest {
  * | POST | /plugins/:pluginId/bridge/action | Proxy performAction to plugin worker |
  * | POST | /plugins/:pluginId/data/:key | Proxy getData to plugin worker (key in URL) |
  * | POST | /plugins/:pluginId/actions/:key | Proxy performAction to plugin worker (key in URL) |
+ * | GET | /plugins/:pluginId/bridge/stream/:channel | SSE stream from worker to UI |
  * | GET | /plugins/:pluginId/dashboard | Aggregated health dashboard data |
  *
  * **Route Ordering Note:** Static routes (like /ui-contributions, /tools) must be
@@ -273,6 +277,49 @@ export function pluginRoutes(
     loader,
     workerManager: bridgeDeps?.workerManager ?? webhookDeps?.workerManager,
   });
+
+  async function resolvePluginAuditCompanyIds(req: Request): Promise<string[]> {
+    if (typeof (db as { select?: unknown }).select === "function") {
+      const rows = await db
+        .select({ id: companies.id })
+        .from(companies);
+      return rows.map((row) => row.id);
+    }
+
+    if (req.actor.type === "agent" && req.actor.companyId) {
+      return [req.actor.companyId];
+    }
+
+    if (req.actor.type === "board") {
+      return req.actor.companyIds ?? [];
+    }
+
+    return [];
+  }
+
+  async function logPluginMutationActivity(
+    req: Request,
+    action: string,
+    entityId: string,
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    const companyIds = await resolvePluginAuditCompanyIds(req);
+    if (companyIds.length === 0) return;
+
+    const actor = getActorInfo(req);
+    await Promise.all(companyIds.map((companyId) =>
+      logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action,
+        entityType: "plugin",
+        entityId,
+        details,
+      })));
+  }
 
   /**
    * GET /api/plugins
@@ -732,6 +779,13 @@ export function pluginRoutes(
           // no-op
         }
         const updated = await registry.getById(existingPlugin.id);
+        await logPluginMutationActivity(req, "plugin.installed", existingPlugin.id, {
+          pluginId: existingPlugin.id,
+          pluginKey: existingPlugin.pluginKey,
+          packageName: updated?.packageName ?? existingPlugin.packageName,
+          version: updated?.version ?? existingPlugin.version,
+          source: isLocalPath ? "local_path" : "npm",
+        });
         publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: existingPlugin.id, action: "installed" } });
         res.json(updated);
       } else {
@@ -1179,6 +1233,99 @@ export function pluginRoutes(
     }
   });
 
+  // ===========================================================================
+  // SSE stream bridge route
+  // ===========================================================================
+
+  /**
+   * GET /api/plugins/:pluginId/bridge/stream/:channel
+   *
+   * Server-Sent Events endpoint for real-time streaming from plugin worker to UI.
+   *
+   * The worker pushes events via `ctx.streams.emit(channel, event)` which arrive
+   * as JSON-RPC notifications to the host, get published on the PluginStreamBus,
+   * and are fanned out to all connected SSE clients matching (pluginId, channel,
+   * companyId).
+   *
+   * Query parameters:
+   * - `companyId` (required): Scope events to a specific company
+   *
+   * SSE event types:
+   * - `message`: A data event from the worker (default)
+   * - `open`: The worker opened the stream channel
+   * - `close`: The worker closed the stream channel — client should disconnect
+   *
+   * Errors:
+   * - 400 if companyId is missing
+   * - 404 if plugin not found
+   * - 501 if bridge deps or stream bus are not configured
+   */
+  router.get("/plugins/:pluginId/bridge/stream/:channel", async (req, res) => {
+    assertBoard(req);
+
+    if (!bridgeDeps?.streamBus) {
+      res.status(501).json({ error: "Plugin stream bridge is not enabled" });
+      return;
+    }
+
+    const { pluginId, channel } = req.params;
+    const companyId = req.query.companyId as string | undefined;
+
+    if (!companyId) {
+      res.status(400).json({ error: '"companyId" query parameter is required' });
+      return;
+    }
+
+    const plugin = await resolvePlugin(registry, pluginId);
+    if (!plugin) {
+      res.status(404).json({ error: "Plugin not found" });
+      return;
+    }
+
+    assertCompanyAccess(req, companyId);
+
+    // Set SSE headers
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+
+    // Send initial comment to establish the connection
+    res.write(":ok\n\n");
+
+    let unsubscribed = false;
+    const safeUnsubscribe = () => {
+      if (!unsubscribed) {
+        unsubscribed = true;
+        unsubscribe();
+      }
+    };
+
+    const unsubscribe = bridgeDeps.streamBus.subscribe(
+      plugin.id,
+      channel,
+      companyId,
+      (event, eventType) => {
+        if (unsubscribed || !res.writable) return;
+        try {
+          if (eventType !== "message") {
+            res.write(`event: ${eventType}\n`);
+          }
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch {
+          // Connection closed or write error — stop delivering
+          safeUnsubscribe();
+        }
+      },
+    );
+
+    req.on("close", safeUnsubscribe);
+    res.on("error", safeUnsubscribe);
+  });
+
   /**
    * GET /api/plugins/:pluginId
    *
@@ -1227,6 +1374,11 @@ export function pluginRoutes(
 
     try {
       const result = await lifecycle.unload(plugin.id, purge);
+      await logPluginMutationActivity(req, "plugin.uninstalled", plugin.id, {
+        pluginId: plugin.id,
+        pluginKey: plugin.pluginKey,
+        purge,
+      });
       publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: plugin.id, action: "uninstalled" } });
       res.json(result);
     } catch (err) {
@@ -1257,6 +1409,11 @@ export function pluginRoutes(
 
     try {
       const result = await lifecycle.enable(plugin.id);
+      await logPluginMutationActivity(req, "plugin.enabled", plugin.id, {
+        pluginId: plugin.id,
+        pluginKey: plugin.pluginKey,
+        version: result?.version ?? plugin.version,
+      });
       publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: plugin.id, action: "enabled" } });
       res.json(result);
     } catch (err) {
@@ -1292,6 +1449,11 @@ export function pluginRoutes(
 
     try {
       const result = await lifecycle.disable(plugin.id, reason);
+      await logPluginMutationActivity(req, "plugin.disabled", plugin.id, {
+        pluginId: plugin.id,
+        pluginKey: plugin.pluginKey,
+        reason: reason ?? null,
+      });
       publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: plugin.id, action: "disabled" } });
       res.json(result);
     } catch (err) {
@@ -1451,6 +1613,13 @@ export function pluginRoutes(
       // 3. If new capabilities, mark as upgrade_pending
       // 4. Otherwise, transition to ready
       const result = await lifecycle.upgrade(plugin.id, version);
+      await logPluginMutationActivity(req, "plugin.upgraded", plugin.id, {
+        pluginId: plugin.id,
+        pluginKey: plugin.pluginKey,
+        previousVersion: plugin.version,
+        version: result?.version ?? plugin.version,
+        targetVersion: version ?? null,
+      });
       publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: plugin.id, action: "upgraded" } });
       res.json(result);
     } catch (err) {
@@ -1537,6 +1706,11 @@ export function pluginRoutes(
     try {
       const result = await registry.upsertConfig(plugin.id, {
         configJson: body.configJson,
+      });
+      await logPluginMutationActivity(req, "plugin.config.updated", plugin.id, {
+        pluginId: plugin.id,
+        pluginKey: plugin.pluginKey,
+        configKeyCount: Object.keys(body.configJson).length,
       });
 
       // Notify the running worker about the config change (PLUGIN_SPEC §25.4.4).

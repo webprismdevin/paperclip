@@ -29,22 +29,35 @@ export interface PluginDevWatcher {
   close(): void;
 }
 
+export type ResolvePluginPackagePath = (
+  pluginId: string,
+) => Promise<string | null | undefined>;
+
+export interface PluginDevWatcherFsDeps {
+  existsSync?: typeof existsSync;
+  watch?: typeof watch;
+}
+
 /**
  * Create a PluginDevWatcher that monitors local plugin directories and
  * restarts workers on file changes.
  */
 export function createPluginDevWatcher(
   lifecycle: PluginLifecycleManager,
+  resolvePluginPackagePath?: ResolvePluginPackagePath,
+  fsDeps?: PluginDevWatcherFsDeps,
 ): PluginDevWatcher {
   const watchers = new Map<string, FSWatcher>();
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const fileExists = fsDeps?.existsSync ?? existsSync;
+  const watchFs = fsDeps?.watch ?? watch;
 
   function watchPlugin(pluginId: string, packagePath: string): void {
     // Don't double-watch
     if (watchers.has(pluginId)) return;
 
     const absPath = path.resolve(packagePath);
-    if (!existsSync(absPath)) {
+    if (!fileExists(absPath)) {
       log.warn(
         { pluginId, packagePath: absPath },
         "plugin-dev-watcher: package path does not exist, skipping watch",
@@ -53,7 +66,7 @@ export function createPluginDevWatcher(
     }
 
     try {
-      const watcher = watch(absPath, { recursive: true }, (_event, filename) => {
+      const watcher = watchFs(absPath, { recursive: true }, (_event, filename) => {
         // Ignore node_modules and hidden files inside the plugin dir
         if (
           filename &&
@@ -119,10 +132,54 @@ export function createPluginDevWatcher(
   }
 
   function close(): void {
+    lifecycle.off("plugin.loaded", handlePluginLoaded);
+    lifecycle.off("plugin.enabled", handlePluginEnabled);
+    lifecycle.off("plugin.disabled", handlePluginDisabled);
+    lifecycle.off("plugin.unloaded", handlePluginUnloaded);
+
     for (const [pluginId] of watchers) {
       unwatchPlugin(pluginId);
     }
   }
+
+  async function watchLocalPluginById(pluginId: string): Promise<void> {
+    if (!resolvePluginPackagePath) return;
+
+    try {
+      const packagePath = await resolvePluginPackagePath(pluginId);
+      if (!packagePath) return;
+      watchPlugin(pluginId, packagePath);
+    } catch (err) {
+      log.warn(
+        {
+          pluginId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "plugin-dev-watcher: failed to resolve plugin package path",
+      );
+    }
+  }
+
+  function handlePluginLoaded(payload: { pluginId: string }): void {
+    void watchLocalPluginById(payload.pluginId);
+  }
+
+  function handlePluginEnabled(payload: { pluginId: string }): void {
+    void watchLocalPluginById(payload.pluginId);
+  }
+
+  function handlePluginDisabled(payload: { pluginId: string }): void {
+    unwatchPlugin(payload.pluginId);
+  }
+
+  function handlePluginUnloaded(payload: { pluginId: string }): void {
+    unwatchPlugin(payload.pluginId);
+  }
+
+  lifecycle.on("plugin.loaded", handlePluginLoaded);
+  lifecycle.on("plugin.enabled", handlePluginEnabled);
+  lifecycle.on("plugin.disabled", handlePluginDisabled);
+  lifecycle.on("plugin.unloaded", handlePluginUnloaded);
 
   return {
     watch: watchPlugin,

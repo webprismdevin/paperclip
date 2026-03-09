@@ -583,6 +583,20 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         actionHandlers.set(key, handler);
       },
     },
+    streams: (() => {
+      const channelCompanyMap = new Map<string, string>();
+      return {
+        open(channel: string, companyId: string) {
+          channelCompanyMap.set(channel, companyId);
+        },
+        emit(_channel: string, _event: unknown) {
+          // No-op in test harness — events are not forwarded
+        },
+        close(channel: string) {
+          channelCompanyMap.delete(channel);
+        },
+      };
+    })(),
     tools: {
       register(name, _decl, fn) {
         requireCapability(manifest, capabilitySet, "agent.tools.register");

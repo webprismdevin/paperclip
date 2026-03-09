@@ -681,6 +681,63 @@ export interface WorkerToHostMethods {
 export type WorkerToHostMethodName = keyof WorkerToHostMethods;
 
 // ---------------------------------------------------------------------------
+// Worker→Host Notification Types (fire-and-forget, no response)
+// ---------------------------------------------------------------------------
+
+/**
+ * Typed parameter shapes for worker→host JSON-RPC notifications.
+ *
+ * Notifications are fire-and-forget — the worker does not wait for a response.
+ * These are used for streaming events and logging, not for request-response RPCs.
+ */
+export interface WorkerToHostNotifications {
+  /**
+   * Forward a stream event to connected SSE clients.
+   *
+   * Emitted by the worker for each event on a stream channel. The host
+   * publishes to the PluginStreamBus, which fans out to all SSE clients
+   * subscribed to the (pluginId, channel, companyId) tuple.
+   *
+   * The `event` payload is JSON-serializable and sent as SSE `data:`.
+   * The default SSE event type is `"message"`.
+   */
+  "streams.emit": {
+    channel: string;
+    companyId: string;
+    event: unknown;
+  };
+
+  /**
+   * Signal that a stream channel has been opened.
+   *
+   * Emitted when the worker calls `ctx.streams.open(channel, companyId)`.
+   * UI clients may use this to display a "connected" indicator or begin
+   * buffering input. The host tracks open channels so it can emit synthetic
+   * close events if the worker crashes.
+   */
+  "streams.open": {
+    channel: string;
+    companyId: string;
+  };
+
+  /**
+   * Signal that a stream channel has been closed.
+   *
+   * Emitted when the worker calls `ctx.streams.close(channel)`, or
+   * synthetically by the host when a worker process exits with channels
+   * still open. UI clients should treat this as terminal and disconnect
+   * the SSE connection.
+   */
+  "streams.close": {
+    channel: string;
+    companyId: string;
+  };
+}
+
+/** Union of all worker→host notification method names. */
+export type WorkerToHostNotificationName = keyof WorkerToHostNotifications;
+
+// ---------------------------------------------------------------------------
 // Typed Request / Response Helpers
 // ---------------------------------------------------------------------------
 

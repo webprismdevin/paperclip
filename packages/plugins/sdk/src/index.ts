@@ -151,6 +151,8 @@ export type {
   HostToWorkerResponse,
   WorkerToHostRequest,
   WorkerToHostResponse,
+  WorkerToHostNotifications,
+  WorkerToHostNotificationName,
 } from "./protocol.js";
 
 // Plugin context and all client interfaces
@@ -178,6 +180,7 @@ export type {
   PluginGoalsClient,
   PluginDataClient,
   PluginActionsClient,
+  PluginStreamsClient,
   PluginToolsClient,
   PluginMetricsClient,
   PluginLogger,

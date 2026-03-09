@@ -249,6 +249,39 @@ export interface PluginDataResult<T = unknown> {
 // usePluginAction hook return type
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// usePluginStream hook return type
+// ---------------------------------------------------------------------------
+
+/**
+ * Return value of `usePluginStream<T>(channel)`.
+ *
+ * Provides a growing array of events pushed from the plugin worker via SSE,
+ * plus connection status metadata.
+ *
+ * @template T The type of each event emitted by the worker
+ *
+ * @see PLUGIN_SPEC.md §19.8 — Real-Time Streaming
+ */
+export interface PluginStreamResult<T = unknown> {
+  /** All events received so far, in arrival order. */
+  events: T[];
+  /** The most recently received event, or `null` if none yet. */
+  lastEvent: T | null;
+  /** `true` while the SSE connection is being established. */
+  connecting: boolean;
+  /** `true` once the SSE connection is open and receiving events. */
+  connected: boolean;
+  /** Error if the SSE connection failed or was interrupted. `null` otherwise. */
+  error: Error | null;
+  /** Close the SSE connection and stop receiving events. */
+  close(): void;
+}
+
+// ---------------------------------------------------------------------------
+// usePluginAction hook return type
+// ---------------------------------------------------------------------------
+
 /**
  * Return value of `usePluginAction(key)`.
  *

@@ -159,6 +159,11 @@ export interface WorkerStartOptions {
   execArgv?: string[];
   /** Environment variables passed to the child process. */
   env?: Record<string, string>;
+  /**
+   * Callback for stream notifications from the worker (streams.open/emit/close).
+   * The host wires this to the PluginStreamBus to fan out events to SSE clients.
+   */
+  onStreamNotification?: (method: string, params: Record<string, unknown>) => void;
 }
 
 /**
@@ -359,6 +364,10 @@ export function createPluginWorkerHandle(
   let backoffTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRestartAt: number | null = null;
 
+  // Track open stream channels so we can emit synthetic close on crash.
+  // Maps channel → companyId.
+  const openStreamChannels = new Map<string, string>();
+
   // Shutdown coordination
   let intentionalStop = false;
 
@@ -530,6 +539,39 @@ export function createPluginWorkerHandle(
       return;
     }
 
+    // Stream notifications: forward to the stream bus via callback
+    if (
+      notification.method === "streams.open" ||
+      notification.method === "streams.emit" ||
+      notification.method === "streams.close"
+    ) {
+      const params = (notification.params ?? {}) as Record<string, unknown>;
+
+      // Track open channels so we can emit synthetic close on crash
+      if (notification.method === "streams.open") {
+        const ch = String(params.channel ?? "");
+        const co = String(params.companyId ?? "");
+        if (ch) openStreamChannels.set(ch, co);
+      } else if (notification.method === "streams.close") {
+        openStreamChannels.delete(String(params.channel ?? ""));
+      }
+
+      if (options.onStreamNotification) {
+        try {
+          options.onStreamNotification(notification.method, params);
+        } catch (err) {
+          log.error(
+            {
+              method: notification.method,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "stream notification handler failed",
+          );
+        }
+      }
+      return;
+    }
+
     log.debug({ method: notification.method }, "received notification from worker");
   }
 
@@ -618,6 +660,19 @@ export function createPluginWorkerHandle(
         `Worker process exited (code=${code}, signal=${signal})`,
       ),
     );
+
+    // Emit synthetic close for any orphaned stream channels so SSE clients
+    // are notified instead of hanging indefinitely.
+    if (openStreamChannels.size > 0 && options.onStreamNotification) {
+      for (const [channel, companyId] of openStreamChannels) {
+        try {
+          options.onStreamNotification("streams.close", { channel, companyId });
+        } catch {
+          // Best-effort cleanup — don't let it interfere with exit handling
+        }
+      }
+      openStreamChannels.clear();
+    }
 
     emitter.emit("exit", { pluginId, code, signal });
 

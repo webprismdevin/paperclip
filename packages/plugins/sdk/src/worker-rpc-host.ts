@@ -734,6 +734,26 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
       },
 
+      streams: (() => {
+        // Track channel → companyId so emit/close don't require companyId
+        const channelCompanyMap = new Map<string, string>();
+        return {
+          open(channel: string, companyId: string): void {
+            channelCompanyMap.set(channel, companyId);
+            notifyHost("streams.open", { channel, companyId });
+          },
+          emit(channel: string, event: unknown): void {
+            const companyId = channelCompanyMap.get(channel) ?? "";
+            notifyHost("streams.emit", { channel, companyId, event });
+          },
+          close(channel: string): void {
+            const companyId = channelCompanyMap.get(channel) ?? "";
+            channelCompanyMap.delete(channel);
+            notifyHost("streams.close", { channel, companyId });
+          },
+        };
+      })(),
+
       tools: {
         register(
           name: string,

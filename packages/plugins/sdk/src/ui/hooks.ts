@@ -1,4 +1,4 @@
-import type { PluginDataResult, PluginActionFn, PluginHostContext } from "./types.js";
+import type { PluginDataResult, PluginActionFn, PluginHostContext, PluginStreamResult } from "./types.js";
 import { getSdkUiRuntimeValue } from "./runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -107,4 +107,47 @@ export function usePluginAction(key: string): PluginActionFn {
 export function useHostContext(): PluginHostContext {
   const impl = getSdkUiRuntimeValue<() => PluginHostContext>("useHostContext");
   return impl();
+}
+
+// ---------------------------------------------------------------------------
+// usePluginStream
+// ---------------------------------------------------------------------------
+
+/**
+ * Subscribe to a real-time event stream pushed from the plugin worker.
+ *
+ * Opens an SSE connection to `GET /api/plugins/:pluginId/bridge/stream/:channel`
+ * and accumulates events as they arrive. The worker pushes events using
+ * `ctx.streams.emit(channel, event)`.
+ *
+ * @template T The expected shape of each streamed event
+ * @param channel - The stream channel name (must match what the worker uses in `ctx.streams.emit`)
+ * @param options - Optional configuration for the stream
+ * @returns `PluginStreamResult<T>` with `events`, `lastEvent`, connection status, and `close()`
+ *
+ * @example
+ * ```tsx
+ * function ChatMessages() {
+ *   const { events, connected, close } = usePluginStream<ChatToken>("chat-stream");
+ *
+ *   return (
+ *     <div>
+ *       {events.map((e, i) => <span key={i}>{e.text}</span>)}
+ *       {connected && <span className="pulse" />}
+ *       <button onClick={close}>Stop</button>
+ *     </div>
+ *   );
+ * }
+ * ```
+ *
+ * @see PLUGIN_SPEC.md §19.8 — Real-Time Streaming
+ */
+export function usePluginStream<T = unknown>(
+  channel: string,
+  options?: { companyId?: string },
+): PluginStreamResult<T> {
+  const impl = getSdkUiRuntimeValue<
+    (nextChannel: string, nextOptions?: { companyId?: string }) => PluginStreamResult<T>
+  >("usePluginStream");
+  return impl(channel, options);
 }
