@@ -6,6 +6,9 @@ import { Router } from "express";
 import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import type { DeploymentMode } from "@paperclipai/shared";
+import { getChatDriver, listChatDrivers } from "./chat/drivers/index.js";
+import type { ChatEvent } from "./chat/drivers/index.js";
+import { findServerAdapter, listAdapterModels } from "../adapters/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +21,51 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
 
   // Track active Claude processes per thread for stop functionality
   const activeProcesses = new Map<string, ReturnType<typeof spawn>>();
+
+  // Cache for /adapters endpoint (60-second TTL)
+  let adaptersCache: { data: any[]; timestamp: number } | null = null;
+  const ADAPTERS_CACHE_TTL = 60_000;
+
+  // List available chat adapters
+  router.get("/adapters", async (_req: any, res: any) => {
+    const now = Date.now();
+    if (adaptersCache && now - adaptersCache.timestamp < ADAPTERS_CACHE_TTL) {
+      res.json(adaptersCache.data);
+      return;
+    }
+
+    const drivers = listChatDrivers();
+    const results: { type: string; label: string; available: boolean; models: { id: string; label: string }[] }[] = [];
+
+    for (const driver of drivers) {
+      let available = false;
+      const serverAdapter = findServerAdapter(driver.type);
+      if (serverAdapter) {
+        try {
+          const envResult = await serverAdapter.testEnvironment({
+            companyId: "",
+            adapterType: driver.type,
+            config: {},
+          });
+          available = envResult.status === "pass" || envResult.status === "warn";
+        } catch {
+          available = false;
+        }
+      }
+
+      let models: { id: string; label: string }[] = [];
+      try {
+        models = await listAdapterModels(driver.type);
+      } catch {
+        // ignore
+      }
+
+      results.push({ type: driver.type, label: driver.label, available, models });
+    }
+
+    adaptersCache = { data: results, timestamp: now };
+    res.json(results);
+  });
 
   // List threads for a company
   router.get("/threads", async (req: any, res: any) => {
@@ -34,13 +82,14 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
 
   // Create thread
   router.post("/threads", async (req: any, res: any) => {
-    const { companyId, title } = req.body;
+    const { companyId, title, adapterType } = req.body;
     if (!companyId) {
       res.status(400).json({ error: "companyId is required" });
       return;
     }
+    const effectiveAdapterType = adapterType ?? "claude_local";
     const result = await db.execute(
-      sql`INSERT INTO chat_threads (company_id, title, created_by) VALUES (${companyId}, ${title ?? "New Chat"}, ${req.actor?.userId ?? null}) RETURNING *`,
+      sql`INSERT INTO chat_threads (company_id, title, created_by, adapter_type) VALUES (${companyId}, ${title ?? "New Chat"}, ${req.actor?.userId ?? null}, ${effectiveAdapterType}) RETURNING *`,
     );
     res.status(201).json(getRows(result)[0] ?? null);
   });
@@ -120,10 +169,10 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
     res.json({ status: row.status });
   });
 
-  // ---- Chat endpoint: spawn claude CLI, stream response via SSE ----
+  // ---- Chat endpoint: spawn CLI via ChatDriver, stream response via SSE ----
   router.post("/threads/:threadId/chat", async (req: any, res: any) => {
     const { threadId } = req.params;
-    const { message, displayMessage, model } = req.body;
+    const { message, displayMessage, model, adapterType } = req.body;
     if (!message) {
       res.status(400).json({ error: "message is required" });
       return;
@@ -136,6 +185,14 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
     const thread = getRows(threadResult)[0];
     if (!thread) {
       res.status(404).json({ error: "thread not found" });
+      return;
+    }
+
+    // Use thread's stored adapter_type (not what the client sends) for resume consistency
+    const driverType: string = thread.adapter_type ?? adapterType ?? "claude_local";
+    const driver = getChatDriver(driverType);
+    if (!driver) {
+      res.status(400).json({ error: `unknown adapter type: ${driverType}` });
       return;
     }
 
@@ -180,7 +237,7 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
       }
     }
 
-    // Build claude args — load system prompt + skills
+    // Build system prompt — load base prompt + skills
     const chatDir = resolve(__dirname, "chat");
     const systemPromptPath = resolve(chatDir, "system-prompt.md");
     let systemPrompt = readFileSync(systemPromptPath, "utf-8");
@@ -197,24 +254,7 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
       // skills/ directory may not exist yet — that's fine
     }
 
-    const args = [
-      "--print", "-",
-      "--output-format", "stream-json",
-      "--verbose",
-    ];
-
-    args.push("--dangerously-skip-permissions");
-    args.push("--append-system-prompt", systemPrompt);
-
-    if (model) {
-      args.push("--model", model);
-    }
-
-    if (thread.session_id) {
-      args.push("--resume", thread.session_id);
-    }
-
-    // Build Paperclip env vars so Claude can interact with the Paperclip API
+    // Build Paperclip env vars so the CLI can interact with the Paperclip API
     const companyId = thread.company_id;
     const resolveHost = (raw: string): string => {
       const h = raw.trim();
@@ -230,7 +270,7 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
       PAPERCLIP_API_URL: apiUrl,
     };
 
-    // Forward the board user's auth context to the Claude process.
+    // Forward the board user's auth context to the CLI process.
     if (deploymentMode !== "local_trusted") {
       const cookieHeader = req.headers.cookie;
       if (cookieHeader) {
@@ -238,7 +278,16 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
       }
     }
 
-    const proc = spawn("claude", args, {
+    // Use the driver to build args
+    const args = driver.buildArgs({
+      model: model ?? "",
+      sessionId: thread.session_id ?? null,
+      systemPrompt,
+      cwd: process.cwd(),
+      env: paperclipEnv,
+    });
+
+    const proc = spawn(driver.command, args, {
       cwd: process.cwd(),
       env: { ...process.env, ...paperclipEnv },
       stdio: ["pipe", "pipe", "pipe"],
@@ -253,87 +302,93 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
     let sessionId: string | null = thread.session_id;
     let fullResponse = "";
     let stdoutBuffer = "";
+    let fullStdout = "";
     const segments: any[] = [];
 
     proc.stdout.on("data", (chunk: Buffer) => {
-      stdoutBuffer += chunk.toString();
+      const chunkStr = chunk.toString();
+      stdoutBuffer += chunkStr;
+      fullStdout += chunkStr;
       const lines = stdoutBuffer.split("\n");
       stdoutBuffer = lines.pop() ?? "";
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
 
-          if (event.type === "system" && event.subtype === "init" && event.session_id) {
-            sessionId = event.session_id;
-            safeSend(`data: ${JSON.stringify({ type: "session", sessionId })}\n\n`);
-          }
-
-          if (event.type === "assistant" && event.message?.content) {
-            for (const block of event.message.content) {
-              if (block.type === "thinking" && block.thinking) {
-                const last = segments[segments.length - 1];
-                if (last && last.kind === "thinking") {
-                  last.content += block.thinking;
-                } else {
-                  segments.push({ kind: "thinking", content: block.thinking });
-                }
-                safeSend(`data: ${JSON.stringify({ type: "thinking", text: block.thinking })}\n\n`);
-              }
-              if (block.type === "text" && block.text) {
-                fullResponse += block.text;
-                const last = segments[segments.length - 1];
-                if (last && last.kind === "text") {
-                  last.content += block.text;
-                } else {
-                  segments.push({ kind: "text", content: block.text });
-                }
-                safeSend(`data: ${JSON.stringify({ type: "text", text: block.text })}\n\n`);
-              }
-              if (block.type === "tool_use") {
-                segments.push({ kind: "tool", name: block.name, input: block.input });
-                safeSend(`data: ${JSON.stringify({ type: "tool_use", name: block.name, input: block.input })}\n\n`);
-              }
-            }
-          }
-
-          if (event.type === "user" && event.message?.content) {
-            for (const block of event.message.content) {
-              if (block.type === "tool_result") {
-                const resultContent = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
-                const isError = block.is_error ?? false;
-                for (let i = segments.length - 1; i >= 0; i--) {
-                  if (segments[i].kind === "tool" && segments[i].result === undefined) {
-                    segments[i].result = resultContent;
-                    segments[i].isError = isError;
-                    break;
-                  }
-                }
-                safeSend(`data: ${JSON.stringify({
-                  type: "tool_result",
-                  toolUseId: block.tool_use_id,
-                  content: resultContent,
-                  isError,
-                })}\n\n`);
-              }
-            }
-          }
-
-          if (event.type === "result") {
-            if (event.session_id) sessionId = event.session_id;
-            safeSend(`data: ${JSON.stringify({
-              type: "result",
-              usage: event.usage ?? null,
-              costUsd: event.total_cost_usd ?? null,
-              isError: event.is_error ?? false,
-            })}\n\n`);
-          }
-        } catch {
-          // Non-JSON line, ignore
+        const chatEvents = driver.parseEvent(line);
+        for (const evt of chatEvents) {
+          handleChatEvent(evt);
         }
       }
     });
+
+    function handleChatEvent(evt: ChatEvent) {
+      switch (evt.type) {
+        case "session_init":
+          sessionId = evt.sessionId ?? null;
+          safeSend(`data: ${JSON.stringify({ type: "session", sessionId })}\n\n`);
+          break;
+
+        case "thinking": {
+          const last = segments[segments.length - 1];
+          if (last && last.kind === "thinking") {
+            last.content += evt.text;
+          } else {
+            segments.push({ kind: "thinking", content: evt.text });
+          }
+          safeSend(`data: ${JSON.stringify({ type: "thinking", text: evt.text })}\n\n`);
+          break;
+        }
+
+        case "text": {
+          fullResponse += evt.text;
+          const last = segments[segments.length - 1];
+          if (last && last.kind === "text") {
+            last.content += evt.text;
+          } else {
+            segments.push({ kind: "text", content: evt.text });
+          }
+          safeSend(`data: ${JSON.stringify({ type: "text", text: evt.text })}\n\n`);
+          break;
+        }
+
+        case "tool_use":
+          segments.push({ kind: "tool", name: evt.name, input: evt.input });
+          safeSend(`data: ${JSON.stringify({ type: "tool_use", name: evt.name, input: evt.input })}\n\n`);
+          break;
+
+        case "tool_result": {
+          for (let i = segments.length - 1; i >= 0; i--) {
+            if (segments[i].kind === "tool" && segments[i].result === undefined) {
+              segments[i].result = evt.content;
+              segments[i].isError = evt.isError;
+              break;
+            }
+          }
+          safeSend(`data: ${JSON.stringify({
+            type: "tool_result",
+            toolUseId: evt.toolUseId,
+            content: evt.content,
+            isError: evt.isError,
+          })}\n\n`);
+          break;
+        }
+
+        case "result":
+          if (evt.sessionId) sessionId = evt.sessionId;
+          safeSend(`data: ${JSON.stringify({
+            type: "result",
+            usage: evt.usage ?? null,
+            costUsd: evt.costUsd ?? null,
+            isError: evt.isError ?? false,
+          })}\n\n`);
+          break;
+
+        case "error":
+          safeSend(`data: ${JSON.stringify({ type: "error", error: evt.text ?? "unknown error" })}\n\n`);
+          break;
+      }
+    }
 
     let stderr = "";
     proc.stderr.on("data", (chunk: Buffer) => {
@@ -342,13 +397,13 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
 
     proc.on("close", async (code: number | null) => {
       activeProcesses.delete(threadId);
+
+      // Process any remaining buffered output
       if (stdoutBuffer.trim()) {
-        try {
-          const event = JSON.parse(stdoutBuffer);
-          if (event.type === "result" && event.session_id) {
-            sessionId = event.session_id;
-          }
-        } catch {}
+        const chatEvents = driver.parseEvent(stdoutBuffer);
+        for (const evt of chatEvents) {
+          handleChatEvent(evt);
+        }
       }
 
       if (fullResponse || segments.length > 0) {
@@ -358,19 +413,27 @@ export function chatRoutes(db: Db, deploymentMode?: DeploymentMode) {
         );
       }
 
-      const threadStatus = (code !== 0 && !fullResponse) ? "error" : "idle";
-      if (sessionId) {
+      // Handle unknown session errors — clear session_id so next request starts fresh
+      if (code !== 0 && driver.isUnknownSessionError(fullStdout, stderr)) {
         await db.execute(
-          sql`UPDATE chat_threads SET session_id = ${sessionId}, status = ${threadStatus}, updated_at = NOW() WHERE id = ${threadId}`,
+          sql`UPDATE chat_threads SET session_id = NULL, status = 'idle', updated_at = NOW() WHERE id = ${threadId}`,
         );
+        safeSend(`data: ${JSON.stringify({ type: "error", error: "Session expired. A new session will be started on next message." })}\n\n`);
       } else {
-        await db.execute(
-          sql`UPDATE chat_threads SET status = ${threadStatus}, updated_at = NOW() WHERE id = ${threadId}`,
-        );
-      }
+        const threadStatus = (code !== 0 && !fullResponse) ? "error" : "idle";
+        if (sessionId) {
+          await db.execute(
+            sql`UPDATE chat_threads SET session_id = ${sessionId}, status = ${threadStatus}, updated_at = NOW() WHERE id = ${threadId}`,
+          );
+        } else {
+          await db.execute(
+            sql`UPDATE chat_threads SET status = ${threadStatus}, updated_at = NOW() WHERE id = ${threadId}`,
+          );
+        }
 
-      if (code !== 0 && !fullResponse) {
-        safeSend(`data: ${JSON.stringify({ type: "error", error: stderr || `claude exited with code ${code}` })}\n\n`);
+        if (code !== 0 && !fullResponse) {
+          safeSend(`data: ${JSON.stringify({ type: "error", error: stderr || `${driver.command} exited with code ${code}` })}\n\n`);
+        }
       }
 
       safeSend("data: [DONE]\n\n");
