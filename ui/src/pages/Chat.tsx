@@ -26,13 +26,12 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 
-const MODELS = [
-  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5", short: "Sonnet" },
-  { id: "claude-opus-4-6", label: "Opus 4.6", short: "Opus" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", short: "Haiku" },
-] as const;
-
-const DEFAULT_MODEL = MODELS[0].id;
+interface ChatAdapter {
+  type: string;
+  label: string;
+  available: boolean;
+  models: { id: string; label: string }[];
+}
 
 // ── Slash Commands ──────────────────────────────────────────────────
 
@@ -185,6 +184,7 @@ interface Thread {
   title: string;
   session_id: string | null;
   status: "idle" | "running" | "error";
+  adapter_type?: string;
   created_at: string;
   updated_at: string;
 }
@@ -804,10 +804,12 @@ export function Chat() {
         abortRef.current.abort();
         abortRef.current = null;
       }
-      if (id) {
-        navigate(`/chat/${id}`, { replace: true });
-      } else {
+      if (!id) {
+        // New chat — unlock adapter
+        setAdapterLocked(false);
         navigate("/chat", { replace: true });
+      } else {
+        navigate(`/chat/${id}`, { replace: true });
       }
     },
     [navigate],
@@ -825,10 +827,48 @@ export function Chat() {
   }, [threadIdFromUrl]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [segments, setSegments] = useState<StreamSegment[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [selectedAdapter, setSelectedAdapter] = useState<string>("claude_local");
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [adapterLocked, setAdapterLocked] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [adapterMenuOpen, setAdapterMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const adapterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch available adapters
+  const { data: adapters } = useQuery<ChatAdapter[]>({
+    queryKey: ["chat-adapters"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/adapters`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch adapters");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  // Derive available adapters and models from selected adapter
+  const availableAdapters = adapters?.filter((a) => a.available) ?? [];
+  const currentAdapter =
+    availableAdapters.find((a) => a.type === selectedAdapter) ?? availableAdapters[0];
+  const currentModels = currentAdapter?.models ?? [];
+
+  // Default adapter selection on mount
+  useEffect(() => {
+    if (availableAdapters.length === 0) return;
+    const hasSelected = availableAdapters.some((a) => a.type === selectedAdapter);
+    if (!hasSelected) {
+      const claude = availableAdapters.find((a) => a.type === "claude_local");
+      setSelectedAdapter(claude ? claude.type : availableAdapters[0].type);
+    }
+  }, [availableAdapters, selectedAdapter]);
+
+  // Reset model when adapter changes
+  useEffect(() => {
+    if (currentModels.length > 0 && !currentModels.some((m) => m.id === selectedModel)) {
+      setSelectedModel(currentModels[0].id);
+    }
+  }, [currentModels, selectedModel]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -901,11 +941,12 @@ export function Chat() {
     mutationFn: () =>
       fetchJson<Thread>(`${API_BASE}/threads`, {
         method: "POST",
-        body: JSON.stringify({ companyId: selectedCompanyId }),
+        body: JSON.stringify({ companyId: selectedCompanyId, adapterType: selectedAdapter }),
       }),
     onSuccess: (thread) => {
       queryClient.invalidateQueries({ queryKey: ["plugin-chat-threads"] });
       setSelectedThreadId(thread.id);
+      setAdapterLocked(true);
     },
   });
 
@@ -950,6 +991,18 @@ export function Chat() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [modelMenuOpen]);
+
+  // Close adapter menu on outside click
+  useEffect(() => {
+    if (!adapterMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (adapterMenuRef.current && !adapterMenuRef.current.contains(e.target as Node)) {
+        setAdapterMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [adapterMenuOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1105,10 +1158,11 @@ export function Chat() {
       try {
         const thread = await fetchJson<Thread>(`${API_BASE}/threads`, {
           method: "POST",
-          body: JSON.stringify({ companyId: selectedCompanyId }),
+          body: JSON.stringify({ companyId: selectedCompanyId, adapterType: selectedAdapter }),
         });
         queryClient.invalidateQueries({ queryKey: ["plugin-chat-threads"] });
         setSelectedThreadId(thread.id);
+        setAdapterLocked(true);
         threadId = thread.id;
       } catch {
         return;
@@ -1190,6 +1244,7 @@ export function Chat() {
           message: enrichedMessage,
           displayMessage: enrichedMessage !== trimmed ? trimmed : undefined,
           model: selectedModel,
+          adapterType: selectedAdapter,
         }),
         signal: controller.signal,
       });
@@ -1283,10 +1338,21 @@ export function Chat() {
         queryClient.invalidateQueries({ queryKey: ["plugin-chat-threads"] });
       }
     }
-  }, [input, selectedThreadId, isStreaming, selectedModel, selectedCompanyId, agents, issues, queryClient, appendToLastText, appendToLastThinking, addToolUse, resolveToolResult, addError]);
+  }, [input, selectedThreadId, isStreaming, selectedModel, selectedAdapter, selectedCompanyId, agents, issues, queryClient, appendToLastText, appendToLastThinking, addToolUse, resolveToolResult, addError]);
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const threadNotFound = !!selectedThreadId && threads.length > 0 && !selectedThread;
+
+  // Lock adapter when an existing thread is selected
+  useEffect(() => {
+    if (selectedThread?.adapter_type) {
+      setSelectedAdapter(selectedThread.adapter_type);
+      setAdapterLocked(true);
+    } else if (selectedThread) {
+      // Thread exists but has no adapter_type (legacy) — don't lock
+      setAdapterLocked(false);
+    }
+  }, [selectedThread]);
 
   const renderInput = (className?: string) => (
     <div className={`shrink-0 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3 relative ${className ?? ""}`}>
@@ -1486,38 +1552,89 @@ export function Chat() {
         )}
       </div>
       <div className="flex items-center justify-between mt-1.5 px-0.5">
-        <div className="relative" ref={modelMenuRef}>
-          <button
-            onClick={() => setModelMenuOpen(!modelMenuOpen)}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          >
-            {MODELS.find((m) => m.id === selectedModel)?.label ?? "Model"}
-            {modelMenuOpen ? (
-              <ChevronDown className="h-2.5 w-2.5" />
-            ) : (
-              <ChevronUp className="h-2.5 w-2.5" />
-            )}
-          </button>
-          {modelMenuOpen && (
-            <div className="absolute bottom-full left-0 mb-1 bg-card border border-border rounded shadow-lg py-1 min-w-[160px] z-50">
-              {MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    setSelectedModel(m.id);
-                    setModelMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                    selectedModel === m.id
-                      ? "text-foreground bg-accent"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
+        <div className="flex items-center gap-2">
+          {/* Adapter selector — only shown when multiple adapters available */}
+          {availableAdapters.length > 1 && (
+            <div className="relative" ref={adapterMenuRef}>
+              <button
+                onClick={() => !adapterLocked && setAdapterMenuOpen(!adapterMenuOpen)}
+                className={`flex items-center gap-1 text-[10px] transition-colors ${
+                  adapterLocked
+                    ? "text-muted-foreground/30 cursor-not-allowed"
+                    : "text-muted-foreground/50 hover:text-muted-foreground"
+                }`}
+                disabled={adapterLocked}
+                title={adapterLocked ? "Adapter is locked for this thread" : "Select adapter"}
+              >
+                {currentAdapter?.label ?? "Adapter"}
+                {!adapterLocked && (
+                  adapterMenuOpen ? (
+                    <ChevronDown className="h-2.5 w-2.5" />
+                  ) : (
+                    <ChevronUp className="h-2.5 w-2.5" />
+                  )
+                )}
+              </button>
+              {adapterMenuOpen && !adapterLocked && (
+                <div className="absolute bottom-full left-0 mb-1 bg-card border border-border rounded shadow-lg py-1 min-w-[140px] z-50">
+                  {availableAdapters.map((a) => (
+                    <button
+                      key={a.type}
+                      onClick={() => {
+                        setSelectedAdapter(a.type);
+                        setAdapterMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                        selectedAdapter === a.type
+                          ? "text-foreground bg-accent"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      }`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+          {/* Separator when both selectors shown */}
+          {availableAdapters.length > 1 && (
+            <span className="text-[10px] text-muted-foreground/20">/</span>
+          )}
+          {/* Model selector */}
+          <div className="relative" ref={modelMenuRef}>
+            <button
+              onClick={() => setModelMenuOpen(!modelMenuOpen)}
+              className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            >
+              {currentModels.find((m) => m.id === selectedModel)?.label ?? "Model"}
+              {modelMenuOpen ? (
+                <ChevronDown className="h-2.5 w-2.5" />
+              ) : (
+                <ChevronUp className="h-2.5 w-2.5" />
+              )}
+            </button>
+            {modelMenuOpen && (
+              <div className="absolute bottom-full left-0 mb-1 bg-card border border-border rounded shadow-lg py-1 min-w-[160px] z-50">
+                {currentModels.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setSelectedModel(m.id);
+                      setModelMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                      selectedModel === m.id
+                        ? "text-foreground bg-accent"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <p className="text-[10px] text-muted-foreground/30">
           Shift+Enter for new line
