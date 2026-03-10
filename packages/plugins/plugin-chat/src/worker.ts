@@ -10,6 +10,66 @@ import type {
 const PLUGIN_NAME = "paperclip-chat";
 
 // ---------------------------------------------------------------------------
+// Claude stream-json parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Buffers raw stdout chunks and emits parsed ChatStreamEvents for each
+ * complete JSON line from Claude CLI's `--output-format stream-json`.
+ */
+function createStreamJsonParser(emit: (event: ChatStreamEvent) => void) {
+  let buffer = "";
+  return {
+    push(chunk: string) {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      // Keep the last (possibly incomplete) line in the buffer
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const obj = JSON.parse(trimmed) as Record<string, unknown>;
+          const type = obj.type as string | undefined;
+          if (type === "content_block_delta") {
+            const delta = obj.delta as Record<string, unknown> | undefined;
+            if (delta?.type === "text_delta" && typeof delta.text === "string") {
+              emit({ type: "text", text: delta.text });
+            }
+            if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+              emit({ type: "thinking", text: delta.thinking });
+            }
+          } else if (type === "system" && obj.subtype === "init") {
+            if (typeof obj.session_id === "string") {
+              emit({ type: "session_init", sessionId: obj.session_id });
+            }
+          } else if (type === "result") {
+            const usage = obj.usage as Record<string, unknown> | undefined;
+            emit({
+              type: "result",
+              usage: usage ? {
+                input_tokens: (usage.input_tokens as number) ?? 0,
+                output_tokens: (usage.output_tokens as number) ?? 0,
+              } : undefined,
+              costUsd: typeof obj.cost_usd === "number" ? obj.cost_usd : undefined,
+            });
+          }
+          // tool_use and tool_result events can be added later
+        } catch {
+          // Not valid JSON — skip
+        }
+      }
+    },
+    /** Flush any remaining buffer content */
+    flush() {
+      if (buffer.trim()) {
+        this.push("\n");
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // State key helpers — all chat data lives in plugin.state
 // ---------------------------------------------------------------------------
 
@@ -43,8 +103,7 @@ async function saveThread(ctx: PluginContext, thread: ChatThread): Promise<void>
     scopeKind: "instance",
     scopeId: "global",
     stateKey: threadKey(thread.id),
-    value: thread as unknown as Record<string, unknown>,
-  });
+  }, thread as unknown);
 }
 
 async function getThreadList(ctx: PluginContext, companyId: string): Promise<string[]> {
@@ -61,8 +120,7 @@ async function saveThreadList(ctx: PluginContext, companyId: string, ids: string
     scopeKind: "company",
     scopeId: companyId,
     stateKey: threadListKey(companyId),
-    value: ids as unknown as Record<string, unknown>,
-  });
+  }, ids as unknown);
 }
 
 async function getMessages(ctx: PluginContext, threadId: string): Promise<ChatMessage[]> {
@@ -79,8 +137,7 @@ async function saveMessages(ctx: PluginContext, threadId: string, msgs: ChatMess
     scopeKind: "instance",
     scopeId: "global",
     stateKey: messagesKey(threadId),
-    value: msgs as unknown as Record<string, unknown>,
-  });
+  }, msgs as unknown);
 }
 
 function generateId(): string {
@@ -88,53 +145,18 @@ function generateId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Map AgentSessionEvent → ChatStreamEvent
+// Adapter type → human-readable label
 // ---------------------------------------------------------------------------
 
-function mapSessionEvent(event: AgentSessionEvent): ChatStreamEvent | null {
-  switch (event.eventType) {
-    case "chunk": {
-      const payload = event.payload ?? {};
-      // The host delivers parsed adapter output in payload
-      const chunkType = (payload.type as string) ?? "text";
-      if (chunkType === "thinking") {
-        return { type: "thinking", text: event.message ?? "" };
-      }
-      if (chunkType === "tool_use") {
-        return {
-          type: "tool_use",
-          name: (payload.name as string) ?? "tool",
-          input: payload.input,
-        };
-      }
-      if (chunkType === "tool_result") {
-        return {
-          type: "tool_result",
-          content: event.message ?? "",
-          isError: (payload.isError as boolean) ?? false,
-          toolUseId: payload.toolUseId as string | undefined,
-        };
-      }
-      // Default: text chunk
-      return { type: "text", text: event.message ?? "" };
-    }
-    case "status":
-      // Session status change — could carry session ID
-      if (event.payload?.sessionId) {
-        return { type: "session_init", sessionId: event.payload.sessionId as string };
-      }
-      return null;
-    case "done":
-      return {
-        type: "result",
-        usage: event.payload?.usage as ChatStreamEvent["usage"],
-        costUsd: event.payload?.costUsd as number | undefined,
-      };
-    case "error":
-      return { type: "error", text: event.message ?? "Unknown error" };
-    default:
-      return null;
-  }
+const ADAPTER_LABELS: Record<string, string> = {
+  claude_local: "Claude",
+  openai: "OpenAI",
+  codex: "Codex",
+  opencode: "OpenCode",
+};
+
+function adapterTypeLabel(adapterType: string): string {
+  return ADAPTER_LABELS[adapterType] ?? adapterType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------
@@ -168,16 +190,42 @@ const plugin = definePlugin({
     });
 
     // ── Data: list available adapters ───────────────────────────────
-    ctx.data.register("adapters", async (_params: Record<string, unknown>) => {
-      // Query the host's agent registry to discover available adapters
-      // TODO: The host needs to expose adapter discovery through agents.list or a dedicated API
-      // For now, return a static list that the host will validate at session creation time
-      const adapters: ChatAdapterInfo[] = [
-        { type: "claude_local", label: "Claude", available: true, models: [] },
-        { type: "codex_local", label: "Codex", available: true, models: [] },
-        { type: "opencode_local", label: "OpenCode", available: true, models: [] },
-      ];
-      return adapters;
+    ctx.data.register("adapters", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      if (!companyId) {
+        return [
+          { type: "claude_local", label: "Claude", available: true, models: [] },
+        ] as ChatAdapterInfo[];
+      }
+      try {
+        const agents = await ctx.agents.list({ companyId });
+
+        // Deduplicate by adapterType — show distinct adapter types, not individual agents
+        // Mark available if ANY agent of that type is not terminated
+        const adapterMap = new Map<string, ChatAdapterInfo>();
+        for (const a of agents) {
+          const existing = adapterMap.get(a.adapterType);
+          if (existing) {
+            // If any agent of this type is available, mark the adapter available
+            if (a.status !== "terminated") existing.available = true;
+            continue;
+          }
+          adapterMap.set(a.adapterType, {
+            type: a.adapterType,
+            label: adapterTypeLabel(a.adapterType),
+            available: a.status !== "terminated",
+            models: [],
+          });
+        }
+        const adapters = Array.from(adapterMap.values());
+        return adapters.length > 0 ? adapters : [
+          { type: "claude_local", label: "Claude", available: true, models: [] },
+        ];
+      } catch {
+        return [
+          { type: "claude_local", label: "Claude", available: true, models: [] },
+        ] as ChatAdapterInfo[];
+      }
     });
 
     // ── Action: create thread ───────────────────────────────────────
@@ -290,13 +338,21 @@ const plugin = definePlugin({
       }
       await saveThread(ctx, thread);
 
+      // Track whether this is the first message in the thread (new session)
+      const isNewSession = !thread.sessionId;
+
       // Create or resume agent session
       let sessionId = thread.sessionId;
       if (!sessionId) {
-        // TODO: Map adapterType to an agent ID in the host's registry
-        // For now, use a convention: the agent ID matches the adapter type
-        const agentId = thread.adapterType;
-        const session = await ctx.agentSessions.create(agentId, companyId, {
+        // Look up a chat-suitable agent by adapter type
+        // Prefer agents with role "assistant" (dedicated chat agents) over task-oriented agents
+        const agents = await ctx.agents.list({ companyId });
+        const matching = agents.filter((a) => a.adapterType === thread.adapterType);
+        const agent = matching.find((a) => a.name === "Chat Assistant") ?? matching.find((a) => a.role === "general") ?? matching[0];
+        if (!agent) {
+          throw new Error(`No agent found with adapter type "${thread.adapterType}". Available: ${agents.map((a) => `${a.name}(${a.adapterType})`).join(", ") || "none"}`);
+        }
+        const session = await ctx.agents.sessions.create(agent.id, companyId, {
           reason: "Chat plugin: new conversation",
         });
         sessionId = session.sessionId;
@@ -304,20 +360,44 @@ const plugin = definePlugin({
         await saveThread(ctx, thread);
       }
 
+      // Build agent context for the first message so the copilot knows about
+      // available agents and can reference them for handoff.
+      let enrichedMessage = message;
+      if (isNewSession) {
+        const allAgents = await ctx.agents.list({ companyId });
+        const agentContext = allAgents.length > 0
+          ? `[Available Agents]\n${allAgents.map(a => `- @${a.name} (Role: ${a.role ?? "general"}, Title: ${a.title ?? "N/A"}, Status: ${a.status ?? "unknown"})`).join("\n")}\n\n`
+          : "";
+        enrichedMessage = agentContext + message;
+      }
+
+      // Open SSE stream channel for this thread so the UI gets real-time events
+      const streamChannel = `chat:${threadId}`;
+      ctx.streams.open(streamChannel, companyId);
+
       // Collect response segments for persistence
       const segments: ChatMessage["metadata"] = { segments: [] };
       let fullResponse = "";
 
-      // Send message and stream events
-      // The onEvent callback receives AgentSessionEvent objects in real-time
-      // via JSON-RPC notifications from the host
-      const { runId } = await ctx.agentSessions.sendMessage(sessionId, companyId, {
-        prompt: message,
-        reason: "Chat plugin: user message",
-        onEvent: (event: AgentSessionEvent) => {
-          const chatEvent = mapSessionEvent(event);
-          if (!chatEvent) return;
+      // Emit title update if it changed
+      if (thread.title !== "New Chat") {
+        ctx.streams.emit(streamChannel, { type: "title_updated", title: thread.title });
+      }
 
+      // Send message and stream events.
+      // ctx.agents.sessions.sendMessage returns immediately once the run is
+      // queued — the onEvent callback fires asynchronously via JSON-RPC
+      // notifications.  We must wait for the terminal event before saving.
+      const RUN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+      let runId: string | undefined;
+
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error("Chat response timed out"));
+        }, RUN_TIMEOUT_MS);
+
+        // Helper to process parsed stream events
+        const handleParsedEvent = (chatEvent: ChatStreamEvent) => {
           // Accumulate for persistence
           if (chatEvent.type === "text" && chatEvent.text) {
             fullResponse += chatEvent.text;
@@ -344,7 +424,6 @@ const plugin = definePlugin({
             });
           }
           if (chatEvent.type === "tool_result") {
-            // Match to last unresolved tool segment
             for (let i = segments.segments.length - 1; i >= 0; i--) {
               const seg = segments.segments[i];
               if (seg && seg.kind === "tool" && seg.result === undefined) {
@@ -355,15 +434,62 @@ const plugin = definePlugin({
             }
           }
           if (chatEvent.type === "session_init" && chatEvent.sessionId) {
-            // Update session ID if the host provides a new one
             thread.sessionId = chatEvent.sessionId;
           }
 
-          // TODO: Push event to UI via ctx.streams.emit() (SSE bridge — issue #440)
-          // For now, events accumulate and the full response is saved on completion.
-          // Once the SSE bridge lands, add:
-          //   ctx.streams.emit(`chat:${threadId}`, chatEvent);
-        },
+          // Terminal events: run completed or errored — resolve the wait
+          if (chatEvent.type === "result" || chatEvent.type === "error") {
+            clearTimeout(timer);
+            resolve();
+          }
+
+          // Push event to UI via SSE stream in real-time
+          ctx.streams.emit(streamChannel, chatEvent);
+        };
+
+        // Parse raw stdout chunks (Claude stream-json format) into events
+        const parser = createStreamJsonParser(handleParsedEvent);
+
+        ctx.agents.sessions.sendMessage(sessionId, companyId, {
+          prompt: enrichedMessage,
+          reason: "Chat plugin: user message",
+          onEvent: (event: AgentSessionEvent) => {
+            // The host forwards raw stdout/stderr chunks as "chunk" events.
+            // For stdout chunks, parse the Claude stream-json format.
+            if (event.eventType === "chunk") {
+              const stream = event.stream ?? (event.payload?.stream as string | undefined);
+              if (stream === "stdout" && event.message) {
+                parser.push(event.message);
+              }
+              // Ignore stderr chunks
+              return;
+            }
+
+            // Terminal events from the host (run status changes)
+            if (event.eventType === "done") {
+              parser.flush();
+              handleParsedEvent({
+                type: "result",
+                usage: event.payload?.usage as ChatStreamEvent["usage"],
+                costUsd: event.payload?.costUsd as number | undefined,
+              });
+              return;
+            }
+            if (event.eventType === "error") {
+              parser.flush();
+              handleParsedEvent({ type: "error", text: event.message ?? "Unknown error" });
+              return;
+            }
+            if (event.eventType === "status" && event.payload?.sessionId) {
+              handleParsedEvent({ type: "session_init", sessionId: event.payload.sessionId as string });
+            }
+          },
+        }).then((result) => {
+          runId = result.runId;
+        }).catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
       });
 
       // Stream complete — save assistant message
@@ -386,6 +512,10 @@ const plugin = definePlugin({
       thread.updatedAt = new Date().toISOString();
       await saveThread(ctx, thread);
 
+      // Signal stream completion and close the channel
+      ctx.streams.emit(streamChannel, { type: "done" });
+      ctx.streams.close(streamChannel);
+
       ctx.logger.info(`Chat message completed`, { threadId, runId });
 
       return { ok: true, runId };
@@ -400,7 +530,7 @@ const plugin = definePlugin({
       const thread = await getThread(ctx, threadId);
       if (!thread || !thread.sessionId) return { ok: true, stopped: false };
 
-      await ctx.agentSessions.close(thread.sessionId, companyId);
+      await ctx.agents.sessions.close(thread.sessionId, companyId);
       thread.status = "idle";
       thread.sessionId = null; // Force new session on next message
       thread.updatedAt = new Date().toISOString();
