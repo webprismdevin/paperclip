@@ -595,6 +595,13 @@ export function ChatPage(_props: PluginPageProps) {
   const [streamingThinking, setStreamingThinking] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   // Bridge hooks
   const { data: threads, refresh: refreshThreads } = usePluginData<ChatThread[]>("threads", {
@@ -916,18 +923,29 @@ export function ChatPage(_props: PluginPageProps) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); handleDeleteThread(thread.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirmDeleteId === thread.id) {
+                    handleDeleteThread(thread.id);
+                    setConfirmDeleteId(null);
+                  } else {
+                    setConfirmDeleteId(thread.id);
+                  }
+                }}
                 style={{
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  color: "var(--muted-foreground, #94a3b8)",
-                  fontSize: 14,
+                  color: confirmDeleteId === thread.id ? "#ef4444" : "var(--muted-foreground, #94a3b8)",
+                  fontSize: confirmDeleteId === thread.id ? 11 : 14,
                   padding: "2px 4px",
+                  fontWeight: confirmDeleteId === thread.id ? 600 : 400,
+                  transition: "color 150ms",
+                  whiteSpace: "nowrap",
                 }}
-                title="Delete thread"
+                title={confirmDeleteId === thread.id ? "Click again to confirm" : "Delete thread"}
               >
-                x
+                {confirmDeleteId === thread.id ? "Delete?" : "×"}
               </button>
             </div>
           ))}
