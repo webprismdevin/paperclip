@@ -1376,6 +1376,7 @@ export function ChatPage(_props: PluginPageProps) {
                   {filteredCommands.map((cmd, i) => (
                     <button
                       key={cmd.name}
+                      ref={i === slashMenuIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
                       onClick={() => selectCommand(cmd)}
                       onMouseEnter={() => setSlashMenuIndex(i)}
                       style={{
