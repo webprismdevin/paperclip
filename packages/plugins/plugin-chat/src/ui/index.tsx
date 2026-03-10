@@ -596,6 +596,7 @@ export function ChatPage(_props: PluginPageProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (!confirmDeleteId) return;
@@ -829,32 +830,94 @@ export function ChatPage(_props: PluginPageProps) {
       <style dangerouslySetInnerHTML={{ __html: CHAT_STYLES }} />
       {/* Thread sidebar */}
       <div style={{
-        width: 240,
+        width: sidebarCollapsed ? 48 : 240,
         borderRight: "1px solid var(--border, #e2e8f0)",
         display: "flex",
         flexDirection: "column",
         background: "var(--card, #fff)",
+        transition: "width 200ms ease",
+        overflow: "hidden",
       }}>
-        <div style={{ padding: "12px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>
+        <div style={{ padding: "12px", borderBottom: "1px solid var(--border, #e2e8f0)", display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
           <button
-            onClick={handleNewThread}
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             style={{
-              width: "100%",
-              padding: "8px 12px",
-              borderRadius: 6,
+              background: "none",
               border: "none",
-              background: "var(--primary, #2563eb)",
-              color: "var(--primary-foreground, #fff)",
               cursor: "pointer",
-              fontSize: 13,
-              fontWeight: 500,
+              color: "var(--muted-foreground, #94a3b8)",
+              fontSize: 16,
+              padding: "4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: sidebarCollapsed ? "center" : "flex-start",
             }}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            + New Chat
+            {sidebarCollapsed ? "\u25B6" : "\u25C0"}
           </button>
+          {sidebarCollapsed ? (
+            <button
+              onClick={handleNewThread}
+              style={{
+                width: "100%",
+                padding: "8px",
+                borderRadius: 6,
+                border: "none",
+                background: "var(--primary, #2563eb)",
+                color: "var(--primary-foreground, #fff)",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >+</button>
+          ) : (
+            <button
+              onClick={handleNewThread}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "none",
+                background: "var(--primary, #2563eb)",
+                color: "var(--primary-foreground, #fff)",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              + New Chat
+            </button>
+          )}
         </div>
         <div className="chat-scroll" style={{ flex: 1, overflow: "auto" }}>
           {threads?.map((thread) => (
+            sidebarCollapsed ? (
+              <div
+                key={thread.id}
+                onClick={() => { setSelectedThreadId(thread.id); setSidebarCollapsed(false); }}
+                style={{
+                  padding: "8px",
+                  cursor: "pointer",
+                  display: "flex",
+                  justifyContent: "center",
+                  borderBottom: "1px solid var(--border, #e2e8f0)",
+                  background: thread.id === selectedThreadId ? "var(--accent, #f1f5f9)" : "transparent",
+                }}
+                title={thread.title || "New Chat"}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: thread.status === "running" ? "#22c55e" : "var(--muted-foreground, #94a3b8)",
+                    display: "block",
+                  }}
+                  className={thread.status === "running" ? "chat-tool-pulse" : ""}
+                />
+              </div>
+            ) : (
             <div
               key={thread.id}
               onClick={() => setSelectedThreadId(thread.id)}
@@ -918,8 +981,21 @@ export function ChatPage(_props: PluginPageProps) {
                     {thread.title || "New Chat"}
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", marginTop: 2 }}>
-                  {thread.adapterType.replace("_local", "")} {thread.status === "running" ? "..." : ""}
+                <div style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", marginTop: 2, display: "flex", alignItems: "center" }}>
+                  {(thread.adapterType === "claude_local" ? "Claude" : thread.adapterType.replace(/_local$/, "").replace(/^\w/, (c: string) => c.toUpperCase()))}
+                  {thread.status === "running" && (
+                    <span
+                      className="chat-tool-pulse"
+                      style={{
+                        display: "inline-block",
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "#22c55e",
+                        marginLeft: 4,
+                      }}
+                    />
+                  )}
                 </div>
               </div>
               <button
@@ -948,6 +1024,7 @@ export function ChatPage(_props: PluginPageProps) {
                 {confirmDeleteId === thread.id ? "Delete?" : "×"}
               </button>
             </div>
+            )
           ))}
         </div>
       </div>
