@@ -13,13 +13,15 @@
     "ui": "./dist/ui/"
   },
   "scripts": {
-    "prebuild": "node ../../../../scripts/ensure-plugin-build-deps.mjs",
+    "prebuild": "node ../../../scripts/ensure-plugin-build-deps.mjs",
     "build": "tsc && node ./scripts/build-ui.mjs",
     "clean": "rm -rf dist",
     "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
   },
   "dependencies": {
-    "@paperclipai/plugin-sdk": "workspace:*"
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
