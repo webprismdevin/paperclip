@@ -425,13 +425,13 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
         </div>
         <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", opacity: 0.9, lineHeight: 1.6 }}>
           {isUser ? (
-            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{msg.content}</p>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}><IssueLinkedText text={msg.content} /></p>
           ) : hasSegments ? (
             groupSegments(storedSegments).map((group, i) => {
               if (group.type === "text") {
                 return (
                   <div key={i} className="chat-markdown">
-                    <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{group.content}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(group.content)}</Markdown>
                   </div>
                 );
               }
@@ -449,7 +449,7 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
             })
           ) : (
             <div className="chat-markdown">
-              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.content}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(msg.content)}</Markdown>
             </div>
           )}
         </div>
@@ -531,7 +531,7 @@ function StreamingMessage({
               const isLastText = gi === lastTextIdx && isActive;
               return (
                 <div key={gi} className={`chat-markdown ${isLastText ? "chat-cursor" : ""}`}>
-                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{group.content}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{linkifyIssues(group.content)}</Markdown>
                 </div>
               );
             }
@@ -575,6 +575,35 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "plan", description: "Plan and break down work", prompt: "Help me plan work. I'll describe what I need done and you'll help break it into tasks, assign them, and set priorities." },
   { name: "handoff", description: "Hand off work to an agent", prompt: "I want to hand off work to an agent. Which agent should I assign this to, and what's the task? List available agents so I can pick one." },
 ];
+
+// ---------------------------------------------------------------------------
+// Issue reference helpers — auto-detect #PROJ-123 patterns
+// ---------------------------------------------------------------------------
+
+function IssueLinkedText({ text }: { text: string }) {
+  const parts = text.split(/(#[A-Z][A-Z0-9]*-\d+)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^#[A-Z][A-Z0-9]*-\d+$/.test(part) ? (
+          <span key={i} style={{
+            color: "var(--primary, #2563eb)",
+            fontWeight: 500,
+          }}>
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
+function linkifyIssues(text: string): string {
+  // Wrap issue references in bold markdown so they stand out
+  return text.replace(/(#[A-Z][A-Z0-9]*-\d+)/g, "**$1**");
+}
 
 // ---------------------------------------------------------------------------
 // ChatPage — full-page chat interface rendered in the plugin page slot
