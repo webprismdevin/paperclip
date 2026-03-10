@@ -15,9 +15,10 @@ Investigate why an agent or the chat copilot behaved incorrectly, find the instr
 Get the thread or activity that shows the problem:
 
 ```bash
-# Chat copilot thread
-docker compose exec db psql -U paperclip -d paperclip -t -A -c \
-  "SELECT role || ': ' || content FROM chat_messages WHERE thread_id = '<ID>' ORDER BY created_at ASC;"
+# Chat copilot thread — fetch messages via API
+curl -s "$PAPERCLIP_API_URL/api/chat/threads/<THREAD_ID>/messages" \
+  -H "Origin: $PAPERCLIP_API_URL" \
+  ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"}
 
 # Agent activity on an issue
 curl -s "$PAPERCLIP_API_URL/api/issues/<ID>/comments" \
@@ -46,8 +47,8 @@ curl -s "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents" \
   ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"} | jq '.[] | {name, urlKey, adapterConfig}'
 ```
 
-Check `adapterConfig.cwd` for the workspace path. If null, try:
-`~/.paperclip/instances/default/workspaces/*/agents/{urlKey}/`
+Check `adapterConfig.cwd` for the workspace path. If null, try the default Paperclip data directory:
+`$PAPERCLIP_HOME/instances/default/workspaces/*/agents/{urlKey}/`
 
 ### Step 4: Diagnose the gap
 

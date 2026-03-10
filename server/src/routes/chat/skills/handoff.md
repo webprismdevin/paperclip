@@ -11,12 +11,12 @@ When the user @-mentions an agent with a work request, you should **hand off** t
 ### Step 1: Decide whether to confirm or just do it
 
 **Skip confirmation when the user's intent is clear:**
-- User explicitly tells you to create a task: "create a task for @Noah to investigate X" → just create it
-- User corrects you and says what should have happened: "you should have had @Noah do X" → just create it
+- User explicitly tells you to create a task: "create a task for @AgentName to investigate X" → just create it
+- User corrects you and says what should have happened: "you should have had @AgentName do X" → just create it
 - User gives a direct instruction with an @-mention and a clear action → just create it
 
 **Propose structure only when the request is ambiguous or complex:**
-- User gives a vague or multi-part request: "launch a newsletter" → propose options
+- User gives a vague or multi-part request: "build out the onboarding flow" → propose options
 - It's unclear whether this should be one task or many → ask
 
 **For simple, single-action requests** where you do confirm:
@@ -47,13 +47,13 @@ Use `POST /api/companies/{companyId}/issues` with:
 
 ### Step 3: Confirm the handoff
 
-Respond with a summary:
-> Handed off to **CEO**:
-> - **TES-8** "Launch Developer Newsletter" (parent)
->   - **TES-9** "Research competitor newsletters"
->   - **TES-10** "Set up email platform and landing page"
->   - **TES-11** "Write first 3 editions"
->   - **TES-12** "Launch and promote"
+Respond with a summary showing what was created:
+> Handed off to **AgentName**:
+> - **PRJ-12** "Parent task title" (parent)
+>   - **PRJ-13** "Sub-task 1"
+>   - **PRJ-14** "Sub-task 2"
+
+Use the actual identifiers returned by the API.
 
 ### Critical rules
 
@@ -74,13 +74,13 @@ curl -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" \
   ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"} \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Launch Developer Newsletter",
-    "description": "Launch and grow a developer newsletter focused on AI-powered tooling.\n\n## Goal\nReach 5k subscribers within 6 months.\n\n## Strategy\n- Target developers building with AI\n- Weekly format, mix of tutorials and industry analysis\n- Monetize via sponsorships after reaching subscriber milestone",
-    "assigneeAgentId": "ceo-agent-id",
+    "title": "Build user onboarding flow",
+    "description": "Design and implement a multi-step onboarding flow for new users.\n\n## Requirements\n- Welcome screen with value prop\n- Account setup (name, avatar, preferences)\n- Team invitation step\n- First project creation wizard\n\n## Acceptance criteria\n- Users complete onboarding in under 2 minutes\n- Each step is skippable\n- Progress is saved if user leaves mid-flow",
+    "assigneeAgentId": "agent-id-here",
     "priority": "medium",
     "status": "todo"
   }'
-# Response: { "id": "parent-uuid", "identifier": "TES-8", ... }
+# Response: { "id": "parent-uuid", "identifier": "PRJ-12", ... }
 
 # 2. Create sub-tasks with parentId
 curl -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" \
@@ -88,9 +88,9 @@ curl -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" \
   ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"} \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Research competitor newsletters and positioning",
-    "description": "Analyze the top 5 developer newsletters in this space...",
-    "assigneeAgentId": "ceo-agent-id",
+    "title": "Design onboarding UI mockups",
+    "description": "Create wireframes and high-fidelity mockups for each onboarding step...",
+    "assigneeAgentId": "agent-id-here",
     "parentId": "parent-uuid",
     "priority": "medium",
     "status": "todo"
@@ -111,8 +111,8 @@ Signs you should delegate instead of doing it yourself:
 - The task would take multiple tool calls and sustained effort
 - You don't have direct access to the systems involved (e.g., admin dashboards, external services)
 
-**Wrong:** User says "kick off an engineering sprint for feature X" → you start searching the codebase yourself
-**Right:** User says "kick off an engineering sprint for feature X" → you delegate research to the appropriate agent, then help plan once results are back
+**Wrong:** User says "kick off a sprint for feature X" → you start searching the codebase yourself
+**Right:** User says "kick off a sprint for feature X" → you delegate research to the appropriate agent, then help plan once results are back
 
 ### Context from conversation
 
