@@ -554,6 +554,29 @@ function StreamingMessage({
 }
 
 // ---------------------------------------------------------------------------
+// Slash commands
+// ---------------------------------------------------------------------------
+
+interface SlashCommand {
+  name: string;
+  description: string;
+  prompt: string;
+}
+
+const BUILTIN_COMMANDS: SlashCommand[] = [
+  { name: "tasks", description: "List all active tasks", prompt: "Show me all active tasks (todo, in_progress, blocked) in my workspace. Include status, priority, and assignee for each." },
+  { name: "dashboard", description: "Show workspace dashboard", prompt: "Show me the company dashboard — health summary, agent status, task counts, and spend." },
+  { name: "agents", description: "List all agents and their status", prompt: "List all agents in my workspace with their current status, role, and budget usage." },
+  { name: "create", description: "Create a new task", prompt: "Help me create a new task. Ask me for the title, description, priority, and assignee." },
+  { name: "projects", description: "List all projects", prompt: "Show me all projects in my workspace with their status and any associated workspaces." },
+  { name: "costs", description: "Show cost breakdown", prompt: "Show me the cost summary for my workspace — total spend, breakdown by agent, and by project." },
+  { name: "activity", description: "Show recent activity", prompt: "Show me the recent activity log for my workspace." },
+  { name: "blocked", description: "Show blocked tasks", prompt: "Show me all blocked tasks and what's blocking them. Include comments explaining the blockers." },
+  { name: "plan", description: "Plan and break down work", prompt: "Help me plan work. I'll describe what I need done and you'll help break it into tasks, assign them, and set priorities." },
+  { name: "handoff", description: "Hand off work to an agent", prompt: "I want to hand off work to an agent. Which agent should I assign this to, and what's the task? List available agents so I can pick one." },
+];
+
+// ---------------------------------------------------------------------------
 // ChatPage — full-page chat interface rendered in the plugin page slot
 // ---------------------------------------------------------------------------
 
@@ -569,6 +592,7 @@ export function ChatPage(_props: PluginPageProps) {
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0);
 
   // Bridge hooks
   const { data: threads, refresh: refreshThreads } = usePluginData<ChatThread[]>("threads", {
@@ -596,6 +620,14 @@ export function ChatPage(_props: PluginPageProps) {
   const currentModels = currentAdapter?.models ?? [];
   const selectedThread = threads?.find((t) => t.id === selectedThreadId) ?? null;
   const isStreaming = selectedThread?.status === "running" || sending;
+
+  // Slash command detection
+  const slashMatch = input.match(/^\/(\w*)$/);
+  const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
+  const filteredCommands = slashQuery !== null
+    ? BUILTIN_COMMANDS.filter((c) => c.name.startsWith(slashQuery))
+    : [];
+  const showSlashMenu = slashQuery !== null && filteredCommands.length > 0 && !isStreaming;
 
   // Process stream events into live text
   const lastProcessedCount = useRef(0);
@@ -652,6 +684,11 @@ export function ChatPage(_props: PluginPageProps) {
     setStreamingThinking("");
     lastProcessedCount.current = 0;
   }, [selectedThreadId]);
+
+  // Reset slash menu index when query changes
+  useEffect(() => {
+    setSlashMenuIndex(0);
+  }, [slashQuery]);
 
   // ── Handlers ────────────────────────────────────────────────────
 
@@ -718,12 +755,62 @@ export function ChatPage(_props: PluginPageProps) {
     setStreamingThinking("");
   }, [selectedThreadId, companyId, stopThread, refreshThreads]);
 
+  const selectCommand = useCallback(async (cmd: SlashCommand) => {
+    setInput("");
+    // Directly send the command's prompt
+    let threadId = selectedThreadId;
+    if (!threadId) {
+      const thread = await createThread({
+        companyId,
+        adapterType: selectedAdapter,
+        model: selectedModel,
+      }) as ChatThread;
+      threadId = thread.id;
+      setSelectedThreadId(threadId);
+    }
+    setSending(true);
+    setStreamingText("");
+    setStreamingThinking("");
+    lastProcessedCount.current = 0;
+    try {
+      await sendMessage({ threadId, message: cmd.prompt, companyId });
+    } catch (err) {
+      console.error("Send failed:", err);
+    } finally {
+      setSending(false);
+      refreshMessages();
+      refreshThreads();
+    }
+  }, [selectedThreadId, companyId, selectedAdapter, selectedModel, createThread, sendMessage, refreshMessages, refreshThreads]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSlashMenu) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashMenuIndex((prev) => (prev + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashMenuIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectCommand(filteredCommands[slashMenuIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setInput("");
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend]);
+  }, [handleSend, showSlashMenu, filteredCommands, slashMenuIndex, selectCommand]);
 
   // ── Render ──────────────────────────────────────────────────────
 
@@ -857,7 +944,79 @@ export function ChatPage(_props: PluginPageProps) {
           padding: "12px 24px",
           background: "var(--card, #fff)",
         }}>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, position: "relative" }}>
+            {showSlashMenu && (
+              <div style={{
+                position: "absolute",
+                bottom: "100%",
+                left: 0,
+                right: 0,
+                marginBottom: 4,
+                background: "var(--card, #fff)",
+                border: "1px solid var(--border, #e2e8f0)",
+                borderRadius: 8,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                overflow: "hidden",
+                zIndex: 50,
+              }}>
+                <div style={{
+                  padding: "6px 12px",
+                  borderBottom: "1px solid var(--border, #e2e8f0)",
+                }}>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    color: "var(--muted-foreground, #94a3b8)",
+                    opacity: 0.6,
+                  }}>
+                    Commands
+                  </span>
+                </div>
+                <div className="chat-scroll" style={{ maxHeight: 240, overflowY: "auto", padding: "4px 0" }}>
+                  {filteredCommands.map((cmd, i) => (
+                    <button
+                      key={cmd.name}
+                      onClick={() => selectCommand(cmd)}
+                      onMouseEnter={() => setSlashMenuIndex(i)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        border: "none",
+                        background: i === slashMenuIndex ? "var(--accent, #f1f5f9)" : "transparent",
+                        color: "var(--foreground, #1e293b)",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        transition: "background 100ms",
+                      }}
+                    >
+                      <span style={{
+                        fontWeight: 600,
+                        color: "var(--primary, #2563eb)",
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                      }}>
+                        /{cmd.name}
+                      </span>
+                      <span style={{
+                        color: "var(--muted-foreground, #94a3b8)",
+                        fontSize: 12,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}>
+                        {cmd.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
