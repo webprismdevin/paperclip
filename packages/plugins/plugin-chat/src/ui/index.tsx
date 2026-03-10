@@ -594,9 +594,21 @@ export function ChatPage(_props: PluginPageProps) {
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const adjustTextareaHeight = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 144) + "px"; // max ~6 lines at 24px each
+  }, []);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input, adjustTextareaHeight]);
 
   useEffect(() => {
     if (!confirmDeleteId) return;
@@ -1246,7 +1258,7 @@ export function ChatPage(_props: PluginPageProps) {
           padding: "12px 24px",
           background: "var(--card, #fff)",
         }}>
-          <div style={{ display: "flex", gap: 8, position: "relative" }}>
+          <div className="chat-input-glow" style={{ display: "flex", gap: 8, position: "relative" }}>
             {showSlashMenu && (
               <div style={{
                 position: "absolute",
@@ -1320,22 +1332,28 @@ export function ChatPage(_props: PluginPageProps) {
               </div>
             )}
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                adjustTextareaHeight();
+              }}
               onKeyDown={handleKeyDown}
               placeholder={selectedThreadId ? "Type a message..." : "Start a new chat..."}
-              rows={2}
               style={{
                 flex: 1,
                 resize: "none",
                 padding: "8px 12px",
-                borderRadius: 8,
+                borderRadius: 12,
                 border: "1px solid var(--border, #e2e8f0)",
                 fontSize: 14,
                 fontFamily: "inherit",
                 background: "var(--background, #fff)",
                 color: "var(--foreground, #1e293b)",
                 outline: "none",
+                minHeight: 40,
+                height: 40,
+                transition: "border-color 150ms",
               }}
             />
             {isStreaming ? (
