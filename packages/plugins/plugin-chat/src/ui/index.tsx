@@ -440,8 +440,20 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
               }
               if (group.type === "error") {
                 return (
-                  <div key={i} style={{ margin: "4px 0", fontSize: 14, color: "#ef4444" }}>
-                    {group.content}
+                  <div key={i} className="chat-msg-enter" style={{
+                    margin: "6px 0",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "1px solid rgba(239, 68, 68, 0.15)",
+                    fontSize: 13,
+                    color: "#ef4444",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                  }}>
+                    <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                    <span style={{ whiteSpace: "pre-wrap" }}>{group.content}</span>
                   </div>
                 );
               }
@@ -466,11 +478,13 @@ function StreamingMessage({
   segments,
   streamingText,
   streamingThinking,
+  streamingError,
   isActive,
 }: {
   segments: ChatSegment[];
   streamingText: string;
   streamingThinking: string;
+  streamingError: string;
   isActive: boolean;
 }) {
   // Build a combined segment list from stored segments + live streaming text
@@ -540,13 +554,42 @@ function StreamingMessage({
             }
             if (group.type === "error") {
               return (
-                <div key={gi} style={{ margin: "4px 0", fontSize: 14, color: "#ef4444" }}>
-                  {group.content}
+                <div key={gi} className="chat-msg-enter" style={{
+                  margin: "6px 0",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.15)",
+                  fontSize: 13,
+                  color: "#ef4444",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                }}>
+                  <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                  <span style={{ whiteSpace: "pre-wrap" }}>{group.content}</span>
                 </div>
               );
             }
             return null;
           })}
+          {streamingError && (
+            <div className="chat-msg-enter" style={{
+              margin: "6px 0",
+              padding: "8px 12px",
+              borderRadius: 6,
+              background: "rgba(239, 68, 68, 0.08)",
+              border: "1px solid rgba(239, 68, 68, 0.15)",
+              fontSize: 13,
+              color: "#ef4444",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+            }}>
+              <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+              <span style={{ whiteSpace: "pre-wrap" }}>{streamingError}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -622,6 +665,7 @@ export function ChatPage(_props: PluginPageProps) {
   const [editingTitle, setEditingTitle] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
+  const [streamingError, setStreamingError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
@@ -696,6 +740,10 @@ export function ChatPage(_props: PluginPageProps) {
       if (evt.type === "thinking" && evt.text) {
         setStreamingThinking((prev) => prev + evt.text);
       }
+      if (evt.type === "error" && evt.text) {
+        const errText = evt.text;
+        setStreamingError((prev) => prev ? prev + "\n" + errText : errText);
+      }
       if (evt.type === "title_updated") {
         refreshThreads();
       }
@@ -705,6 +753,7 @@ export function ChatPage(_props: PluginPageProps) {
         refreshThreads();
         setStreamingText("");
         setStreamingThinking("");
+        setStreamingError("");
         lastProcessedCount.current = 0;
       }
     }
@@ -734,6 +783,7 @@ export function ChatPage(_props: PluginPageProps) {
   useEffect(() => {
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingError("");
     lastProcessedCount.current = 0;
   }, [selectedThreadId]);
 
@@ -782,6 +832,7 @@ export function ChatPage(_props: PluginPageProps) {
     setInput("");
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingError("");
     lastProcessedCount.current = 0;
 
     try {
@@ -805,6 +856,7 @@ export function ChatPage(_props: PluginPageProps) {
     refreshThreads();
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingError("");
   }, [selectedThreadId, companyId, stopThread, refreshThreads]);
 
   const selectCommand = useCallback(async (cmd: SlashCommand) => {
@@ -823,6 +875,7 @@ export function ChatPage(_props: PluginPageProps) {
     setSending(true);
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingError("");
     lastProcessedCount.current = 0;
     try {
       await sendMessage({ threadId, message: cmd.prompt, companyId });
@@ -1131,6 +1184,7 @@ export function ChatPage(_props: PluginPageProps) {
                       setSending(true);
                       setStreamingText("");
                       setStreamingThinking("");
+                      setStreamingError("");
                       lastProcessedCount.current = 0;
                       try {
                         await sendMessage({ threadId: thread.id, message: trigger.prompt, companyId });
@@ -1261,6 +1315,7 @@ export function ChatPage(_props: PluginPageProps) {
               segments={[]}
               streamingText={streamingText}
               streamingThinking={streamingThinking}
+              streamingError={streamingError}
               isActive={true}
             />
           )}
