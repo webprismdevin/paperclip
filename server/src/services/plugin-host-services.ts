@@ -662,15 +662,21 @@ export function buildHostServices(
           .then((rows) => rows[0] ?? null);
         if (!session) throw new Error(`Session not found: ${params.sessionId}`);
 
+        // Use a unique taskKey per message to prevent heartbeat run coalescing.
+        // Chat messages are sequential — each one must produce its own run so
+        // the plugin worker receives distinct terminal events.
+        const messageTaskKey = `${session.taskKey}:msg:${randomUUID()}`;
+
         const run = await heartbeat.wakeup(session.agentId, {
           source: "automation",
           triggerDetail: "system",
           reason: params.reason ?? null,
           payload: { prompt: params.prompt },
           contextSnapshot: {
-            taskKey: session.taskKey,
+            taskKey: messageTaskKey,
             wakeSource: "automation",
             wakeTriggerDetail: "system",
+            prompt: params.prompt,
           },
           requestedByActorType: "system",
           requestedByActorId: pluginId,

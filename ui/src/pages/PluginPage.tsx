@@ -8,7 +8,6 @@ import { queryKeys } from "@/lib/queryKeys";
 import { PluginSlotMount } from "@/plugins/slots";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-
 /**
  * Company-context plugin page. Renders a plugin's `page` slot at
  * `/:companyPrefix/plugins/:pluginId` when the plugin declares a page slot

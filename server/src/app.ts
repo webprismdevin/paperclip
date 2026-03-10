@@ -36,6 +36,7 @@ import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
 import { buildHostServices } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
+import { createPluginStreamBus } from "./services/plugin-stream-bus.js";
 import { subscribeDomainEvents, publishGlobalLiveEvent } from "./services/index.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -170,6 +171,7 @@ export async function createApp(
   // ---------------------------------------------------------------------------
   // Plugin runtime services — job scheduler, worker manager, tool dispatcher
   // ---------------------------------------------------------------------------
+  const streamBus = createPluginStreamBus();
   const workerManager = createPluginWorkerManager({
     onWorkerEvent(event) {
       publishGlobalLiveEvent({
@@ -181,6 +183,18 @@ export async function createApp(
           willRestart: event.willRestart ?? null,
         },
       });
+    },
+    onStreamNotification(pluginId, method, params) {
+      const channel = String(params.channel ?? "");
+      const companyId = String(params.companyId ?? "");
+      if (!channel || !companyId) return;
+      if (method === "streams.emit") {
+        streamBus.publish(pluginId, channel, companyId, params.event);
+      } else if (method === "streams.open") {
+        streamBus.publish(pluginId, channel, companyId, null, "open");
+      } else if (method === "streams.close") {
+        streamBus.publish(pluginId, channel, companyId, null, "close");
+      }
     },
   });
   const eventBus = createPluginEventBus();
@@ -253,7 +267,7 @@ export async function createApp(
       { scheduler, jobStore },     // jobDeps
       { workerManager },            // webhookDeps
       { toolDispatcher },           // toolDeps
-      { workerManager },            // bridgeDeps
+      { workerManager, streamBus },  // bridgeDeps
     ),
   );
   api.use(

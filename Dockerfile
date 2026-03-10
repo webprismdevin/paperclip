@@ -19,6 +19,8 @@ COPY packages/adapters/cursor-local/package.json packages/adapters/cursor-local/
 COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-gateway/
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
+COPY packages/plugins/sdk/package.json packages/plugins/sdk/
+COPY packages/plugins/plugin-chat/package.json packages/plugins/plugin-chat/
 
 RUN pnpm install --frozen-lockfile
 
@@ -27,6 +29,8 @@ WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
 RUN pnpm --filter @paperclipai/ui build
+RUN pnpm --filter @paperclipai/plugin-sdk build
+RUN pnpm --filter @paperclipai/plugin-chat build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
@@ -34,13 +38,14 @@ FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip \
-  && chown node:node /paperclip
+  && mkdir -p /paperclip /paperclip/plugins \
+  && ln -s /app/packages/plugins/plugin-chat /paperclip/plugins/paperclip-chat \
+  && chown -R node:node /paperclip
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
   HOST=0.0.0.0 \
-  PORT=3100 \
+  PORT=3101 \
   SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \
   PAPERCLIP_INSTANCE_ID=default \
@@ -49,7 +54,7 @@ ENV NODE_ENV=production \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
-EXPOSE 3100
+EXPOSE 3101
 
 USER node
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

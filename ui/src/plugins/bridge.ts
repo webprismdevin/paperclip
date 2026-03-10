@@ -440,6 +440,117 @@ export function useHostContext(): PluginHostContext {
 }
 
 // ---------------------------------------------------------------------------
+// usePluginStream — concrete implementation
+// ---------------------------------------------------------------------------
+
+/**
+ * Return type matching the SDK's `PluginStreamResult<T>`.
+ */
+export interface PluginStreamResult<T = unknown> {
+  events: T[];
+  lastEvent: T | null;
+  connecting: boolean;
+  connected: boolean;
+  error: Error | null;
+  close(): void;
+}
+
+/**
+ * Concrete implementation of `usePluginStream<T>(channel, options?)`.
+ *
+ * Opens an `EventSource` to `GET /api/plugins/:pluginId/bridge/stream/:channel`
+ * and accumulates events as they arrive. The worker pushes events using
+ * `ctx.streams.emit(channel, event)`.
+ */
+export function usePluginStream<T = unknown>(
+  channel: string,
+  options?: { companyId?: string },
+): PluginStreamResult<T> {
+  const scopeRef = useRef<CapturedBridgeScope>({
+    pluginId: activePluginId,
+    companyId: activeHostContext.companyId,
+    renderEnvironment: serializeRenderEnvironment(activeHostContext.renderEnvironment),
+  });
+  const scope = captureBridgeScope(scopeRef);
+  const pluginId = scope.pluginId;
+  const companyId = options?.companyId ?? scope.companyId;
+
+  const [events, setEvents] = useState<T[]>([]);
+  const [lastEvent, setLastEvent] = useState<T | null>(null);
+  const [connecting, setConnecting] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    if (!pluginId || !companyId || !channel) {
+      setConnecting(false);
+      setError(new Error("usePluginStream: missing pluginId, companyId, or channel"));
+      return;
+    }
+
+    // Reset state for new connection
+    setEvents([]);
+    setLastEvent(null);
+    setConnecting(true);
+    setConnected(false);
+    setError(null);
+
+    const url = `/api/plugins/${pluginId}/bridge/stream/${encodeURIComponent(channel)}?companyId=${encodeURIComponent(companyId)}`;
+    const es = new EventSource(url, { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.onopen = () => {
+      setConnecting(false);
+      setConnected(true);
+    };
+
+    es.onmessage = (e) => {
+      try {
+        const parsed = JSON.parse(e.data) as T;
+        setEvents((prev) => [...prev, parsed]);
+        setLastEvent(parsed);
+      } catch {
+        // Ignore unparseable events
+      }
+    };
+
+    // Handle "close" event type from the stream bus
+    es.addEventListener("close", () => {
+      es.close();
+      setConnected(false);
+    });
+
+    es.onerror = () => {
+      // EventSource auto-reconnects on transient errors.
+      // Only surface the error if the connection is fully closed.
+      if (es.readyState === EventSource.CLOSED) {
+        setConnecting(false);
+        setConnected(false);
+        setError(new Error("Stream connection closed"));
+      }
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+      setConnected(false);
+      setConnecting(false);
+    };
+  }, [pluginId, companyId, channel]);
+
+  const close = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setConnected(false);
+    }
+  }, []);
+
+  return { events, lastEvent, connecting, connected, error, close };
+}
+
+// ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 

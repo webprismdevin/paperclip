@@ -331,7 +331,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       `[paperclip] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
-  const prompt = renderTemplate(promptTemplate, {
+  const renderedTemplate = renderTemplate(promptTemplate, {
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
@@ -340,6 +340,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
+
+  // When a context.prompt is provided (e.g. from chat plugin or automation),
+  // use it as the actual prompt to the CLI. The rendered template serves as
+  // a fallback for headless wakeups that don't carry an explicit prompt.
+  const contextPrompt = typeof context.prompt === "string" && context.prompt.trim()
+    ? context.prompt.trim()
+    : null;
+  const prompt = contextPrompt ?? renderedTemplate;
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];

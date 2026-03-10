@@ -325,8 +325,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
+
+  // When a context.prompt is provided (e.g. from chat plugin or automation),
+  // use it as the actual prompt to the CLI. The rendered template serves as
+  // a fallback for headless wakeups that don't carry an explicit prompt.
+  const contextPrompt = typeof context.prompt === "string" && context.prompt.trim()
+    ? context.prompt.trim()
+    : null;
+  const effectivePrompt = contextPrompt ?? renderedPrompt;
   const paperclipEnvNote = renderPaperclipEnvNote(env);
-  const prompt = `${instructionsPrefix}${paperclipEnvNote}${renderedPrompt}`;
+  const prompt = `${instructionsPrefix}${paperclipEnvNote}${effectivePrompt}`;
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args = ["-p", "--output-format", "stream-json", "--workspace", cwd];

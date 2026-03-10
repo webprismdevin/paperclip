@@ -253,11 +253,11 @@ function getShimBlobUrl(specifier: "react" | "react-dom" | "react/jsx-runtime" |
     case "sdk-ui":
       source = `
         const SDK = globalThis.__paperclipPluginBridge__?.sdkUi ?? {};
-        const { usePluginData, usePluginAction, useHostContext,
+        const { usePluginData, usePluginAction, useHostContext, usePluginStream,
           MetricCard, StatusBadge, DataTable, TimeseriesChart,
           MarkdownBlock, KeyValueList, ActionBar, LogView, JsonTree,
           Spinner, ErrorBoundary } = SDK;
-        export { usePluginData, usePluginAction, useHostContext,
+        export { usePluginData, usePluginAction, useHostContext, usePluginStream,
           MetricCard, StatusBadge, DataTable, TimeseriesChart,
           MarkdownBlock, KeyValueList, ActionBar, LogView, JsonTree,
           Spinner, ErrorBoundary };

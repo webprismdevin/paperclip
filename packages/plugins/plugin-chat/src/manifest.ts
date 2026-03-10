@@ -11,11 +11,11 @@ const manifest: PaperclipPluginManifestV1 = {
   description:
     "Multi-adapter AI chat for Paperclip. Supports Claude, Codex, and OpenCode with real-time streaming, session persistence, and tool visibility.",
   author: "Paperclip",
-  categories: ["workspace", "ui", "agents"],
+  categories: ["workspace", "ui"],
   capabilities: [
     // UI
     "ui.page.register",
-    "ui.sidebarPanel.register",
+    "ui.sidebar.register",
     // Agent sessions (streaming chat)
     "agent.sessions.create",
     "agent.sessions.list",
@@ -53,6 +53,19 @@ const manifest: PaperclipPluginManifestV1 = {
       },
     },
   },
+
+  launchers: [
+    {
+      id: "chat-nav",
+      displayName: "Chat",
+      description: "Open the AI chat page",
+      placementZone: "sidebar",
+      action: {
+        type: "navigate",
+        target: "plugins/paperclip-chat",
+      },
+    },
+  ],
 
   ui: {
     slots: [

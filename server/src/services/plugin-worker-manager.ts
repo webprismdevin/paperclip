@@ -1152,6 +1152,13 @@ export interface PluginWorkerManagerOptions {
     signal?: string | null;
     willRestart?: boolean;
   }) => void;
+
+  /**
+   * Optional callback for stream notifications from any worker.
+   * Automatically injected into per-worker options so the caller
+   * doesn't have to wire it at each `startWorker` call site.
+   */
+  onStreamNotification?: (pluginId: string, method: string, params: Record<string, unknown>) => void;
 }
 
 /**
@@ -1205,6 +1212,16 @@ export function createPluginWorkerManager(
         throw new Error(
           `Worker already registered for plugin "${pluginId}" (status: ${existing.status})`,
         );
+      }
+
+      // Inject manager-level onStreamNotification if the worker doesn't
+      // already have one and the manager was configured with one.
+      if (!options.onStreamNotification && managerOptions?.onStreamNotification) {
+        const managerCb = managerOptions.onStreamNotification;
+        options = {
+          ...options,
+          onStreamNotification: (method, params) => managerCb(pluginId, method, params),
+        };
       }
 
       const handle = createPluginWorkerHandle(pluginId, options);

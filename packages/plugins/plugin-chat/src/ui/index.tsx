@@ -12,6 +12,70 @@ import type {
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
+// SVG Icons — match core chat UI icons
+// ---------------------------------------------------------------------------
+
+function IconChat({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  );
+}
+
+function IconSend({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+function IconSidebar({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+  );
+}
+
+function IconPlus({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function IconUser({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+function IconStop({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
+function IconChevron({ size = 10, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Markdown link component — open links in new tab
 // ---------------------------------------------------------------------------
 
@@ -34,7 +98,7 @@ const CHAT_STYLES = `
     to   { opacity: 1; transform: translateY(0); }
   }
   .chat-cursor::after {
-    content: "▊";
+    content: "\\25CA";
     display: inline;
     animation: cursorBlink 800ms steps(2) infinite;
     color: var(--primary, #2563eb);
@@ -53,7 +117,8 @@ const CHAT_STYLES = `
     50% { opacity: 1; }
   }
   .chat-input-glow:focus-within {
-    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3), 0 0 12px rgba(37, 99, 235, 0.08);
+    border-color: var(--primary, #2563eb) !important;
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15);
   }
   .chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
     font-weight: 600;
@@ -75,15 +140,15 @@ const CHAT_STYLES = `
     font-size: 0.88em;
     padding: 0.15em 0.35em;
     border-radius: 3px;
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--code-bg, rgba(0, 0, 0, 0.08));
   }
   .chat-markdown pre {
     margin: 0.6em 0;
     padding: 0.75em 1em;
-    border-radius: 4px;
+    border-radius: 6px;
     overflow-x: auto;
-    background: rgba(0, 0, 0, 0.2) !important;
-    border: 1px solid rgba(0, 0, 0, 0.15);
+    background: var(--code-block-bg, rgba(0, 0, 0, 0.06)) !important;
+    border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
   }
   .chat-markdown pre code {
     padding: 0;
@@ -97,10 +162,10 @@ const CHAT_STYLES = `
     text-underline-offset: 2px;
   }
   .chat-markdown blockquote {
-    border-left: 2px solid rgba(0, 0, 0, 0.15);
+    border-left: 2px solid var(--border, rgba(0, 0, 0, 0.15));
     padding-left: 0.75em;
     margin: 0.5em 0;
-    color: rgba(100, 116, 139, 0.8);
+    color: var(--muted-foreground, rgba(100, 116, 139, 0.8));
   }
   .chat-markdown table {
     border-collapse: collapse;
@@ -108,12 +173,12 @@ const CHAT_STYLES = `
     font-size: 0.9em;
   }
   .chat-markdown th, .chat-markdown td {
-    border: 1px solid rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
     padding: 0.35em 0.6em;
     text-align: left;
   }
   .chat-markdown th {
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--accent, rgba(0, 0, 0, 0.06));
     font-weight: 600;
   }
   .chat-scroll::-webkit-scrollbar { width: 4px; }
@@ -131,6 +196,21 @@ const CHAT_STYLES = `
     .chat-msg-enter { animation: none; }
     .chat-cursor::after { animation: none; }
     .chat-tool-pulse { animation: none; opacity: 1; }
+  }
+  .chat-sidebar-thread:hover {
+    background: var(--accent, rgba(0, 0, 0, 0.04));
+  }
+  .chat-sidebar-thread.active {
+    background: var(--accent, rgba(0, 0, 0, 0.06));
+  }
+  .chat-action-chip:hover {
+    color: var(--foreground, #1e293b) !important;
+    border-color: var(--foreground, rgba(30,41,59,0.2)) !important;
+    background: var(--accent, #f1f5f9) !important;
+  }
+  .chat-recent-thread:hover {
+    background: var(--accent, #f1f5f9) !important;
+    border-color: var(--foreground, rgba(30,41,59,0.1)) !important;
   }
 `;
 
@@ -363,20 +443,13 @@ function ActivityGroup({ segments, isLive }: { segments: ChatSegment[]; isLive: 
 }
 
 // ---------------------------------------------------------------------------
-// formatTime — relative time display
+// formatTime — absolute time display matching core UI (e.g. "08:22 PM")
 // ---------------------------------------------------------------------------
 
 function formatTime(isoStr: string): string {
   try {
     const d = new Date(isoStr);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return "now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   } catch {
     return "";
   }
@@ -395,35 +468,32 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
     <div className="chat-msg-enter" style={{
       display: "flex",
       gap: 12,
-      padding: "12px 16px",
-      background: isUser ? "rgba(0,0,0,0.02)" : "transparent",
+      padding: "16px 0",
     }}>
       <div style={{
-        width: 24,
-        height: 24,
-        borderRadius: 4,
+        width: 28,
+        height: 28,
+        borderRadius: 6,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 12,
-        fontWeight: 600,
         flexShrink: 0,
-        marginTop: 2,
-        background: isUser ? "var(--primary, #2563eb)" : "rgba(37, 99, 235, 0.15)",
+        marginTop: 1,
+        background: isUser ? "var(--muted-foreground, #94a3b8)" : "rgba(37, 99, 235, 0.12)",
         color: isUser ? "#fff" : "var(--primary, #2563eb)",
       }}>
-        {isUser ? "Y" : "P"}
+        {isUser ? <IconUser size={15} /> : <span style={{ fontSize: 13, fontWeight: 700 }}>P</span>}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>
             {isUser ? "You" : "Paperclip"}
           </span>
-          <span style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>
+          <span style={{ fontSize: 11, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>
             {formatTime(msg.createdAt)}
           </span>
         </div>
-        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", opacity: 0.9, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", lineHeight: 1.6 }}>
           {isUser ? (
             <p style={{ margin: 0, whiteSpace: "pre-wrap" }}><IssueLinkedText text={msg.content} /></p>
           ) : hasSegments ? (
@@ -452,7 +522,7 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
                     alignItems: "flex-start",
                     gap: 8,
                   }}>
-                    <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                    <span style={{ flexShrink: 0, marginTop: 1, fontSize: 12 }}>!</span>
                     <span style={{ whiteSpace: "pre-wrap" }}>{group.content}</span>
                   </div>
                 );
@@ -487,7 +557,6 @@ function StreamingMessage({
   streamingError: string;
   isActive: boolean;
 }) {
-  // Build a combined segment list from stored segments + live streaming text
   const allSegments: ChatSegment[] = [...segments];
   if (streamingThinking) {
     allSegments.push({ kind: "thinking", content: streamingThinking });
@@ -499,7 +568,6 @@ function StreamingMessage({
   const grouped = groupSegments(allSegments);
   const hasAnyContent = allSegments.length > 0;
 
-  // Find the last text group index for cursor placement
   let lastTextIdx = -1;
   for (let i = grouped.length - 1; i >= 0; i--) {
     if (grouped[i].type === "text") { lastTextIdx = i; break; }
@@ -509,30 +577,28 @@ function StreamingMessage({
     <div className="chat-msg-enter" style={{
       display: "flex",
       gap: 12,
-      padding: "12px 16px",
+      padding: "16px 0",
     }}>
       <div style={{
-        width: 24,
-        height: 24,
-        borderRadius: 4,
+        width: 28,
+        height: 28,
+        borderRadius: 6,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 12,
-        fontWeight: 600,
         flexShrink: 0,
-        marginTop: 2,
-        background: "rgba(37, 99, 235, 0.15)",
+        marginTop: 1,
+        background: "rgba(37, 99, 235, 0.12)",
         color: "var(--primary, #2563eb)",
       }}>
-        P
+        <span style={{ fontSize: 13, fontWeight: 700 }}>P</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>Paperclip</span>
-          <span style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>now</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>Paperclip</span>
+          <span style={{ fontSize: 11, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>now</span>
         </div>
-        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", opacity: 0.9, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", lineHeight: 1.6 }}>
           {!hasAnyContent && isActive && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted-foreground, #94a3b8)" }}>
               <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>&#x27F3;</span>
@@ -566,7 +632,7 @@ function StreamingMessage({
                   alignItems: "flex-start",
                   gap: 8,
                 }}>
-                  <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                  <span style={{ flexShrink: 0, marginTop: 1, fontSize: 12 }}>!</span>
                   <span style={{ whiteSpace: "pre-wrap" }}>{group.content}</span>
                 </div>
               );
@@ -586,7 +652,7 @@ function StreamingMessage({
               alignItems: "flex-start",
               gap: 8,
             }}>
-              <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+              <span style={{ flexShrink: 0, marginTop: 1, fontSize: 12 }}>!</span>
               <span style={{ whiteSpace: "pre-wrap" }}>{streamingError}</span>
             </div>
           )}
@@ -644,8 +710,295 @@ function IssueLinkedText({ text }: { text: string }) {
 }
 
 function linkifyIssues(text: string): string {
-  // Wrap issue references in bold markdown so they stand out
   return text.replace(/(#[A-Z][A-Z0-9]*-\d+)/g, "**$1**");
+}
+
+// ---------------------------------------------------------------------------
+// Quick action chips for welcome screen
+// ---------------------------------------------------------------------------
+
+const QUICK_ACTIONS = [
+  { label: "Check in on issues", prompt: "Check in on all active issues — show me status, what's blocked, and what needs attention." },
+  { label: "Review goal progress", prompt: "Review progress on all active goals. Summarize where each stands and flag anything off track." },
+  { label: "Plan an initiative", prompt: "I want to plan a new initiative. Help me break it down into tasks and assign them to the right agents." },
+  { label: "Agent status", prompt: "Show me the status of all agents — who's active, idle, what they're working on, and any budget concerns." },
+];
+
+// ---------------------------------------------------------------------------
+// ChatInput — unified input container matching core UI
+// ---------------------------------------------------------------------------
+
+function ChatInput({
+  input,
+  setInput,
+  onSend,
+  onStop,
+  onKeyDown,
+  isStreaming,
+  sending,
+  placeholder,
+  textareaRef,
+  adjustTextareaHeight,
+  showSlashMenu,
+  filteredCommands,
+  slashMenuIndex,
+  setSlashMenuIndex,
+  selectCommand,
+  availableAdapters,
+  selectedAdapter,
+  setSelectedAdapter,
+  selectedThread,
+  currentModels,
+  selectedModel,
+  setSelectedModel,
+}: {
+  input: string;
+  setInput: (v: string) => void;
+  onSend: () => void;
+  onStop: () => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  isStreaming: boolean;
+  sending: boolean;
+  placeholder: string;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
+  adjustTextareaHeight: () => void;
+  showSlashMenu: boolean;
+  filteredCommands: SlashCommand[];
+  slashMenuIndex: number;
+  setSlashMenuIndex: (i: number) => void;
+  selectCommand: (cmd: SlashCommand) => void;
+  availableAdapters: ChatAdapterInfo[];
+  selectedAdapter: string;
+  setSelectedAdapter: (v: string) => void;
+  selectedThread: ChatThread | null;
+  currentModels: { id: string; label: string }[];
+  selectedModel: string;
+  setSelectedModel: (v: string) => void;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      {showSlashMenu && (
+        <div style={{
+          position: "absolute",
+          bottom: "100%",
+          left: 0,
+          right: 0,
+          marginBottom: 4,
+          background: "var(--card, #fff)",
+          border: "1px solid var(--border, #e2e8f0)",
+          borderRadius: 8,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          overflow: "hidden",
+          zIndex: 50,
+        }}>
+          <div style={{
+            padding: "6px 12px",
+            borderBottom: "1px solid var(--border, #e2e8f0)",
+          }}>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: "var(--muted-foreground, #94a3b8)",
+              opacity: 0.6,
+            }}>
+              Commands
+            </span>
+          </div>
+          <div className="chat-scroll" style={{ maxHeight: 240, overflowY: "auto", padding: "4px 0" }}>
+            {filteredCommands.map((cmd, i) => (
+              <button
+                key={cmd.name}
+                ref={i === slashMenuIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                onClick={() => selectCommand(cmd)}
+                onMouseEnter={() => setSlashMenuIndex(i)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  border: "none",
+                  background: i === slashMenuIndex ? "var(--accent, #f1f5f9)" : "transparent",
+                  color: "var(--foreground, #1e293b)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  transition: "background 100ms",
+                }}
+              >
+                <span style={{
+                  fontWeight: 600,
+                  color: "var(--primary, #2563eb)",
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                }}>
+                  /{cmd.name}
+                </span>
+                <span style={{
+                  color: "var(--muted-foreground, #94a3b8)",
+                  fontSize: 12,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}>
+                  {cmd.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Unified input container */}
+      <div
+        className="chat-input-glow"
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 0,
+          border: "1px solid var(--border, #e2e8f0)",
+          borderRadius: 12,
+          background: "var(--background, #fff)",
+          padding: "4px 4px 4px 12px",
+          transition: "border-color 150ms, box-shadow 150ms",
+        }}
+      >
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            adjustTextareaHeight();
+          }}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          rows={1}
+          style={{
+            flex: 1,
+            resize: "none",
+            padding: "6px 8px",
+            border: "none",
+            fontSize: 14,
+            fontFamily: "inherit",
+            background: "transparent",
+            color: "var(--foreground, #1e293b)",
+            outline: "none",
+            minHeight: 32,
+            height: 32,
+            lineHeight: "20px",
+          }}
+        />
+        {isStreaming ? (
+          <button
+            onClick={onStop}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: "none",
+              background: "var(--destructive, #ef4444)",
+              color: "#fff",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+            title="Stop"
+          >
+            <IconStop size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={!input.trim() || sending}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: "none",
+              background: input.trim() && !sending ? "var(--primary, #2563eb)" : "var(--muted-foreground, #94a3b8)",
+              color: "#fff",
+              cursor: input.trim() && !sending ? "pointer" : "not-allowed",
+              opacity: input.trim() && !sending ? 1 : 0.3,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              transition: "opacity 150ms, background 150ms",
+            }}
+            title="Send"
+          >
+            <IconSend size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Adapter / model selector row */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        marginTop: 6,
+        fontSize: 11,
+        color: "var(--muted-foreground, #94a3b8)",
+        padding: "0 4px",
+      }}>
+        {availableAdapters.length > 0 && (
+          <span style={{ cursor: selectedThread ? "default" : "pointer", opacity: selectedThread ? 0.5 : 0.7 }}>
+            {availableAdapters.length > 1 && !selectedThread ? (
+              <select
+                value={selectedAdapter}
+                onChange={(e) => setSelectedAdapter(e.target.value)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  fontSize: "inherit",
+                  cursor: "pointer",
+                  padding: 0,
+                  fontFamily: "inherit",
+                }}
+              >
+                {availableAdapters.map((a) => (
+                  <option key={a.type} value={a.type}>{a.label}</option>
+                ))}
+              </select>
+            ) : (
+              <span>{availableAdapters.find((a) => a.type === selectedAdapter)?.label ?? "Claude"}</span>
+            )}
+          </span>
+        )}
+        {currentModels.length > 0 && (
+          <>
+            <span style={{ opacity: 0.4 }}>/</span>
+            <span style={{ opacity: 0.7 }}>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  fontSize: "inherit",
+                  cursor: "pointer",
+                  padding: 0,
+                  fontFamily: "inherit",
+                }}
+              >
+                {currentModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </span>
+          </>
+        )}
+        <span style={{ marginLeft: "auto", opacity: 0.4 }}>Shift+Enter for new line</span>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -676,7 +1029,7 @@ export function ChatPage(_props: PluginPageProps) {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 144) + "px"; // max ~6 lines at 24px each
+    ta.style.height = Math.min(ta.scrollHeight, 144) + "px";
   }, []);
 
   useEffect(() => {
@@ -703,7 +1056,7 @@ export function ChatPage(_props: PluginPageProps) {
   const stopThread = usePluginAction("stopThread");
   const updateThreadTitle = usePluginAction("updateThreadTitle");
 
-  // SSE stream — subscribe to real-time events for the selected thread
+  // SSE stream
   const streamChannel = selectedThreadId ? `chat:${selectedThreadId}` : "";
   const { events: streamEvents, connected: streamConnected } = usePluginStream<ChatStreamEvent>(
     streamChannel,
@@ -725,7 +1078,7 @@ export function ChatPage(_props: PluginPageProps) {
     : [];
   const showSlashMenu = slashQuery !== null && filteredCommands.length > 0 && !isStreaming;
 
-  // Process stream events into live text
+  // Process stream events
   const lastProcessedCount = useRef(0);
   useEffect(() => {
     if (streamEvents.length <= lastProcessedCount.current) return;
@@ -748,7 +1101,6 @@ export function ChatPage(_props: PluginPageProps) {
         refreshThreads();
       }
       if (evt.type === "done") {
-        // Stream complete — refresh persisted messages and reset streaming state
         refreshMessages();
         refreshThreads();
         setStreamingText("");
@@ -759,7 +1111,7 @@ export function ChatPage(_props: PluginPageProps) {
     }
   }, [streamEvents, refreshMessages, refreshThreads]);
 
-  // Auto-scroll on new messages or streaming text
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
@@ -772,14 +1124,14 @@ export function ChatPage(_props: PluginPageProps) {
     }
   }, [selectedThread]);
 
-  // Default model to first available when adapter changes
+  // Default model
   useEffect(() => {
     if (currentModels.length > 0 && !currentModels.find((m) => m.id === selectedModel)) {
       setSelectedModel(currentModels[0]!.id);
     }
   }, [currentModels, selectedModel]);
 
-  // Reset streaming state when switching threads
+  // Reset streaming on thread switch
   useEffect(() => {
     setStreamingText("");
     setStreamingThinking("");
@@ -787,7 +1139,7 @@ export function ChatPage(_props: PluginPageProps) {
     lastProcessedCount.current = 0;
   }, [selectedThreadId]);
 
-  // Reset slash menu index when query changes
+  // Reset slash menu
   useEffect(() => {
     setSlashMenuIndex(0);
   }, [slashQuery]);
@@ -817,7 +1169,6 @@ export function ChatPage(_props: PluginPageProps) {
 
     let threadId = selectedThreadId;
 
-    // Auto-create thread if none selected
     if (!threadId) {
       const thread = await createThread({
         companyId,
@@ -834,6 +1185,9 @@ export function ChatPage(_props: PluginPageProps) {
     setStreamingThinking("");
     setStreamingError("");
     lastProcessedCount.current = 0;
+
+    // Refresh early so the user message appears while the agent is working
+    setTimeout(() => { refreshMessages(); refreshThreads(); }, 300);
 
     try {
       await sendMessage({
@@ -861,7 +1215,6 @@ export function ChatPage(_props: PluginPageProps) {
 
   const selectCommand = useCallback(async (cmd: SlashCommand) => {
     setInput("");
-    // Directly send the command's prompt
     let threadId = selectedThreadId;
     if (!threadId) {
       const thread = await createThread({
@@ -877,6 +1230,7 @@ export function ChatPage(_props: PluginPageProps) {
     setStreamingThinking("");
     setStreamingError("");
     lastProcessedCount.current = 0;
+    setTimeout(() => { refreshMessages(); refreshThreads(); }, 300);
     try {
       await sendMessage({ threadId, message: cmd.prompt, companyId });
     } catch (err) {
@@ -887,6 +1241,30 @@ export function ChatPage(_props: PluginPageProps) {
       refreshThreads();
     }
   }, [selectedThreadId, companyId, selectedAdapter, selectedModel, createThread, sendMessage, refreshMessages, refreshThreads]);
+
+  const handleQuickAction = useCallback(async (prompt: string) => {
+    const thread = await createThread({
+      companyId,
+      adapterType: selectedAdapter,
+      model: selectedModel,
+    }) as ChatThread;
+    setSelectedThreadId(thread.id);
+    setSending(true);
+    setStreamingText("");
+    setStreamingThinking("");
+    setStreamingError("");
+    lastProcessedCount.current = 0;
+    setTimeout(() => { refreshMessages(); refreshThreads(); }, 300);
+    try {
+      await sendMessage({ threadId: thread.id, message: prompt, companyId });
+    } catch (err) {
+      console.error("Send failed:", err);
+    } finally {
+      setSending(false);
+      refreshMessages();
+      refreshThreads();
+    }
+  }, [companyId, selectedAdapter, selectedModel, createThread, sendMessage, refreshMessages, refreshThreads]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showSlashMenu) {
@@ -919,112 +1297,90 @@ export function ChatPage(_props: PluginPageProps) {
 
   // ── Render ──────────────────────────────────────────────────────
 
+  const inputProps = {
+    input,
+    setInput,
+    onSend: handleSend,
+    onStop: handleStop,
+    onKeyDown: handleKeyDown,
+    isStreaming,
+    sending,
+    textareaRef: textareaRef as React.RefObject<HTMLTextAreaElement>,
+    adjustTextareaHeight,
+    showSlashMenu,
+    filteredCommands,
+    slashMenuIndex,
+    setSlashMenuIndex,
+    selectCommand,
+    availableAdapters,
+    selectedAdapter,
+    setSelectedAdapter,
+    selectedThread,
+    currentModels,
+    selectedModel,
+    setSelectedModel,
+  };
+
   return (
-    <div style={{ display: "flex", height: "100%", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div style={{ display: "flex", height: "calc(100vh - 8rem)", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <style dangerouslySetInnerHTML={{ __html: CHAT_STYLES }} />
-      {/* Thread sidebar */}
+
+      {/* ── Sidebar ── */}
       <div style={{
-        width: sidebarCollapsed ? 48 : 240,
-        borderRight: "1px solid var(--border, #e2e8f0)",
+        width: sidebarCollapsed ? 0 : 220,
+        borderRight: sidebarCollapsed ? "none" : "1px solid var(--border, #e2e8f0)",
         display: "flex",
         flexDirection: "column",
         background: "var(--card, #fff)",
         transition: "width 200ms ease",
         overflow: "hidden",
+        flexShrink: 0,
       }}>
-        <div style={{ padding: "12px", borderBottom: "1px solid var(--border, #e2e8f0)", display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
+        {/* New Chat button */}
+        <div style={{ padding: "12px" }}>
           <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onClick={() => { setSelectedThreadId(null); setInput(""); }}
             style={{
-              background: "none",
-              border: "none",
+              width: "100%",
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid var(--border, #e2e8f0)",
+              background: "transparent",
+              color: "var(--foreground, #1e293b)",
               cursor: "pointer",
-              color: "var(--muted-foreground, #94a3b8)",
-              fontSize: 16,
-              padding: "4px",
+              fontSize: 13,
+              fontWeight: 500,
               display: "flex",
               alignItems: "center",
-              justifyContent: sidebarCollapsed ? "center" : "flex-start",
+              justifyContent: "center",
+              gap: 6,
             }}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "\u25B6" : "\u25C0"}
+            <IconPlus size={14} />
+            New Chat
           </button>
-          {sidebarCollapsed ? (
-            <button
-              onClick={handleNewThread}
-              style={{
-                width: "100%",
-                padding: "8px",
-                borderRadius: 6,
-                border: "none",
-                background: "var(--primary, #2563eb)",
-                color: "var(--primary-foreground, #fff)",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
-            >+</button>
-          ) : (
-            <button
-              onClick={handleNewThread}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                borderRadius: 6,
-                border: "none",
-                background: "var(--primary, #2563eb)",
-                color: "var(--primary-foreground, #fff)",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 500,
-              }}
-            >
-              + New Chat
-            </button>
-          )}
         </div>
+
+        {/* Thread list */}
         <div className="chat-scroll" style={{ flex: 1, overflow: "auto" }}>
           {threads?.map((thread) => (
-            sidebarCollapsed ? (
-              <div
-                key={thread.id}
-                onClick={() => { setSelectedThreadId(thread.id); setSidebarCollapsed(false); }}
-                style={{
-                  padding: "8px",
-                  cursor: "pointer",
-                  display: "flex",
-                  justifyContent: "center",
-                  borderBottom: "1px solid var(--border, #e2e8f0)",
-                  background: thread.id === selectedThreadId ? "var(--accent, #f1f5f9)" : "transparent",
-                }}
-                title={thread.title || "New Chat"}
-              >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: thread.status === "running" ? "#22c55e" : "var(--muted-foreground, #94a3b8)",
-                    display: "block",
-                  }}
-                  className={thread.status === "running" ? "chat-tool-pulse" : ""}
-                />
-              </div>
-            ) : (
             <div
               key={thread.id}
+              className={`chat-sidebar-thread ${thread.id === selectedThreadId ? "active" : ""}`}
               onClick={() => setSelectedThreadId(thread.id)}
               style={{
                 padding: "10px 12px",
                 cursor: "pointer",
-                borderBottom: "1px solid var(--border, #e2e8f0)",
-                background: thread.id === selectedThreadId ? "var(--accent, #f1f5f9)" : "transparent",
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                alignItems: "flex-start",
+                gap: 10,
+                background: thread.id === selectedThreadId ? "var(--accent, rgba(0,0,0,0.06))" : "transparent",
+                transition: "background 100ms",
               }}
             >
+              <span style={{ flexShrink: 0, marginTop: 2, color: "var(--muted-foreground, #94a3b8)", opacity: 0.5 }}>
+                <IconChat size={14} />
+              </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 {editingThreadId === thread.id ? (
                   <input
@@ -1046,7 +1402,6 @@ export function ChatPage(_props: PluginPageProps) {
                     onClick={(e) => e.stopPropagation()}
                     style={{
                       fontSize: 13,
-                      fontWeight: 500,
                       width: "100%",
                       background: "transparent",
                       border: "1px solid var(--border, #e2e8f0)",
@@ -1065,7 +1420,6 @@ export function ChatPage(_props: PluginPageProps) {
                     }}
                     style={{
                       fontSize: 13,
-                      fontWeight: 500,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -1075,8 +1429,15 @@ export function ChatPage(_props: PluginPageProps) {
                     {thread.title || "New Chat"}
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", marginTop: 2, display: "flex", alignItems: "center" }}>
-                  {(thread.adapterType === "claude_local" ? "Claude" : thread.adapterType.replace(/_local$/, "").replace(/^\w/, (c: string) => c.toUpperCase()))}
+                <div style={{
+                  fontSize: 10,
+                  color: "var(--muted-foreground, #94a3b8)",
+                  marginTop: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}>
+                  <span>{formatTime(thread.updatedAt)}</span>
                   {thread.status === "running" && (
                     <span
                       className="chat-tool-pulse"
@@ -1086,7 +1447,6 @@ export function ChatPage(_props: PluginPageProps) {
                         height: 6,
                         borderRadius: "50%",
                         background: "#22c55e",
-                        marginLeft: 4,
                       }}
                     />
                   )}
@@ -1107,26 +1467,51 @@ export function ChatPage(_props: PluginPageProps) {
                   border: "none",
                   cursor: "pointer",
                   color: confirmDeleteId === thread.id ? "#ef4444" : "var(--muted-foreground, #94a3b8)",
-                  fontSize: confirmDeleteId === thread.id ? 11 : 14,
+                  fontSize: confirmDeleteId === thread.id ? 10 : 14,
                   padding: "2px 4px",
                   fontWeight: confirmDeleteId === thread.id ? 600 : 400,
                   transition: "color 150ms",
                   whiteSpace: "nowrap",
+                  opacity: 0.5,
+                  marginTop: 1,
                 }}
                 title={confirmDeleteId === thread.id ? "Click again to confirm" : "Delete thread"}
               >
-                {confirmDeleteId === thread.id ? "Delete?" : "×"}
+                {confirmDeleteId === thread.id ? "Delete?" : "\u00d7"}
               </button>
             </div>
-            )
           ))}
         </div>
       </div>
 
-      {/* Main chat area */}
+      {/* ── Main area ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* Messages */}
-        <div className="chat-scroll" style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
+
+        {/* ── Messages area ── */}
+        <div className="chat-scroll" style={{ flex: 1, overflow: "auto", padding: "0 32px", position: "relative" }}>
+          {/* Sidebar toggle */}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            style={{
+              position: "sticky",
+              top: 8,
+              left: 0,
+              zIndex: 10,
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--muted-foreground, #94a3b8)",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              opacity: 0.4,
+              marginBottom: -28,
+            }}
+            title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+          >
+            <IconSidebar size={16} />
+          </button>
+          {/* Welcome screen */}
           {!selectedThreadId && (
             <div style={{
               display: "flex",
@@ -1134,14 +1519,11 @@ export function ChatPage(_props: PluginPageProps) {
               alignItems: "center",
               justifyContent: "center",
               height: "100%",
-              gap: 16,
+              gap: 20,
               padding: "0 24px",
             }}>
-              <div style={{
-                fontSize: 28,
-                marginBottom: 4,
-              }}>
-                💬
+              <div style={{ color: "var(--muted-foreground, #94a3b8)", opacity: 0.3 }}>
+                <IconChat size={32} />
               </div>
               <h2 style={{
                 fontSize: 18,
@@ -1149,53 +1531,30 @@ export function ChatPage(_props: PluginPageProps) {
                 color: "var(--foreground, #1e293b)",
                 margin: 0,
               }}>
-                Paperclip Chat
+                What can I help with?
               </h2>
-              <p style={{
-                fontSize: 13,
-                color: "var(--muted-foreground, #94a3b8)",
-                margin: 0,
-              }}>
-                What would you like to do?
-              </p>
+
+              {/* Input on welcome screen */}
+              <div style={{ width: "100%", maxWidth: 520 }}>
+                <ChatInput
+                  {...inputProps}
+                  placeholder="Ask Paperclip anything..."
+                />
+              </div>
+
+              {/* Quick action chips */}
               <div style={{
                 display: "flex",
                 flexWrap: "wrap",
                 justifyContent: "center",
                 gap: 8,
-                maxWidth: 480,
+                maxWidth: 520,
               }}>
-                {[
-                  { label: "Check in on issues", prompt: "Check in on all active issues — show me status, what's blocked, and what needs attention." },
-                  { label: "Review goal progress", prompt: "Review progress on all active goals. Summarize where each stands and flag anything off track." },
-                  { label: "Plan an initiative", prompt: "I want to plan a new initiative. Help me break it down into tasks and assign them to the right agents." },
-                  { label: "Agent status", prompt: "Show me the status of all agents — who's active, idle, what they're working on, and any budget concerns." },
-                ].map((trigger) => (
+                {QUICK_ACTIONS.map((trigger) => (
                   <button
                     key={trigger.label}
-                    onClick={async () => {
-                      // Auto-create thread and send
-                      const thread = await createThread({
-                        companyId,
-                        adapterType: selectedAdapter,
-                        model: selectedModel,
-                      }) as ChatThread;
-                      setSelectedThreadId(thread.id);
-                      setSending(true);
-                      setStreamingText("");
-                      setStreamingThinking("");
-                      setStreamingError("");
-                      lastProcessedCount.current = 0;
-                      try {
-                        await sendMessage({ threadId: thread.id, message: trigger.prompt, companyId });
-                      } catch (err) {
-                        console.error("Send failed:", err);
-                      } finally {
-                        setSending(false);
-                        refreshMessages();
-                        refreshThreads();
-                      }
-                    }}
+                    className="chat-action-chip"
+                    onClick={() => handleQuickAction(trigger.prompt)}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -1209,24 +1568,15 @@ export function ChatPage(_props: PluginPageProps) {
                       cursor: "pointer",
                       transition: "all 150ms",
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = "var(--foreground, #1e293b)";
-                      e.currentTarget.style.borderColor = "var(--foreground, rgba(30,41,59,0.2))";
-                      e.currentTarget.style.background = "var(--accent, #f1f5f9)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "var(--muted-foreground, #94a3b8)";
-                      e.currentTarget.style.borderColor = "var(--border, #e2e8f0)";
-                      e.currentTarget.style.background = "transparent";
-                    }}
                   >
                     {trigger.label}
                   </button>
                 ))}
               </div>
+
               {/* Recent threads */}
               {threads && threads.length > 0 && (
-                <div style={{ width: "100%", maxWidth: 480, marginTop: 16 }}>
+                <div style={{ width: "100%", maxWidth: 520, marginTop: 8 }}>
                   <div style={{
                     display: "flex",
                     alignItems: "center",
@@ -1234,20 +1584,36 @@ export function ChatPage(_props: PluginPageProps) {
                     marginBottom: 8,
                     padding: "0 4px",
                   }}>
-                    <p style={{
+                    <span style={{
                       fontSize: 11,
                       color: "var(--muted-foreground, #94a3b8)",
                       opacity: 0.5,
                       fontWeight: 500,
-                      margin: 0,
                     }}>
                       Recent
-                    </p>
+                    </span>
+                    {threads.length > 3 && (
+                      <button
+                        onClick={() => setSidebarCollapsed(false)}
+                        style={{
+                          fontSize: 11,
+                          color: "var(--muted-foreground, #94a3b8)",
+                          opacity: 0.5,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        View all
+                      </button>
+                    )}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {threads.slice(0, 3).map((thread) => (
                       <button
                         key={thread.id}
+                        className="chat-recent-thread"
                         onClick={() => setSelectedThreadId(thread.id)}
                         style={{
                           display: "flex",
@@ -1262,22 +1628,13 @@ export function ChatPage(_props: PluginPageProps) {
                           transition: "all 150ms",
                           width: "100%",
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "var(--accent, #f1f5f9)";
-                          e.currentTarget.style.borderColor = "var(--foreground, rgba(30,41,59,0.1))";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "transparent";
-                          e.currentTarget.style.borderColor = "var(--border, #e2e8f0)";
-                        }}
                       >
                         <span style={{
-                          fontSize: 14,
                           flexShrink: 0,
                           color: "var(--muted-foreground, #94a3b8)",
-                          opacity: 0.4,
+                          opacity: 0.3,
                         }}>
-                          💬
+                          <IconChat size={14} />
                         </span>
                         <span style={{
                           fontSize: 13,
@@ -1305,12 +1662,14 @@ export function ChatPage(_props: PluginPageProps) {
               )}
             </div>
           )}
-          {messages?.map((msg) => (
+
+          {/* Thread messages */}
+          {selectedThreadId && messages?.map((msg) => (
             <MessageRow key={msg.id} msg={msg} />
           ))}
 
           {/* Live streaming message */}
-          {isStreaming && (
+          {selectedThreadId && isStreaming && (
             <StreamingMessage
               segments={[]}
               streamingText={streamingText}
@@ -1320,7 +1679,7 @@ export function ChatPage(_props: PluginPageProps) {
             />
           )}
 
-          {/* Idle, no content placeholder */}
+          {/* Empty thread placeholder */}
           {selectedThreadId && !isStreaming && (!messages || messages.length === 0) && (
             <div style={{
               display: "flex",
@@ -1329,6 +1688,7 @@ export function ChatPage(_props: PluginPageProps) {
               height: "100%",
               color: "var(--muted-foreground, #94a3b8)",
               fontSize: 14,
+              opacity: 0.5,
             }}>
               Send a message to get started
             </div>
@@ -1336,200 +1696,19 @@ export function ChatPage(_props: PluginPageProps) {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input area */}
-        <div style={{
-          borderTop: "1px solid var(--border, #e2e8f0)",
-          padding: "12px 24px",
-          background: "var(--card, #fff)",
-        }}>
-          <div className="chat-input-glow" style={{ display: "flex", gap: 8, position: "relative" }}>
-            {showSlashMenu && (
-              <div style={{
-                position: "absolute",
-                bottom: "100%",
-                left: 0,
-                right: 0,
-                marginBottom: 4,
-                background: "var(--card, #fff)",
-                border: "1px solid var(--border, #e2e8f0)",
-                borderRadius: 8,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                overflow: "hidden",
-                zIndex: 50,
-              }}>
-                <div style={{
-                  padding: "6px 12px",
-                  borderBottom: "1px solid var(--border, #e2e8f0)",
-                }}>
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    color: "var(--muted-foreground, #94a3b8)",
-                    opacity: 0.6,
-                  }}>
-                    Commands
-                  </span>
-                </div>
-                <div className="chat-scroll" style={{ maxHeight: 240, overflowY: "auto", padding: "4px 0" }}>
-                  {filteredCommands.map((cmd, i) => (
-                    <button
-                      key={cmd.name}
-                      ref={i === slashMenuIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-                      onClick={() => selectCommand(cmd)}
-                      onMouseEnter={() => setSlashMenuIndex(i)}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "8px 12px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        border: "none",
-                        background: i === slashMenuIndex ? "var(--accent, #f1f5f9)" : "transparent",
-                        color: "var(--foreground, #1e293b)",
-                        cursor: "pointer",
-                        fontSize: 13,
-                        transition: "background 100ms",
-                      }}
-                    >
-                      <span style={{
-                        fontWeight: 600,
-                        color: "var(--primary, #2563eb)",
-                        fontFamily: "monospace",
-                        fontSize: 12,
-                      }}>
-                        /{cmd.name}
-                      </span>
-                      <span style={{
-                        color: "var(--muted-foreground, #94a3b8)",
-                        fontSize: 12,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {cmd.description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                adjustTextareaHeight();
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={selectedThreadId ? "Type a message..." : "Start a new chat..."}
-              style={{
-                flex: 1,
-                resize: "none",
-                padding: "8px 12px",
-                borderRadius: 12,
-                border: "1px solid var(--border, #e2e8f0)",
-                fontSize: 14,
-                fontFamily: "inherit",
-                background: "var(--background, #fff)",
-                color: "var(--foreground, #1e293b)",
-                outline: "none",
-                minHeight: 40,
-                height: 40,
-                transition: "border-color 150ms",
-              }}
-            />
-            {isStreaming ? (
-              <button
-                onClick={handleStop}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "var(--destructive, #ef4444)",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  alignSelf: "flex-end",
-                }}
-              >
-                Stop
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || sending}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "var(--primary, #2563eb)",
-                  color: "var(--primary-foreground, #fff)",
-                  cursor: input.trim() && !sending ? "pointer" : "not-allowed",
-                  opacity: input.trim() && !sending ? 1 : 0.4,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  alignSelf: "flex-end",
-                }}
-              >
-                {sending ? "..." : "Send"}
-              </button>
-            )}
-          </div>
-
-          {/* Adapter / model selector */}
+        {/* ── Bottom input (only when in a thread) ── */}
+        {selectedThreadId && (
           <div style={{
-            display: "flex",
-            gap: 8,
-            marginTop: 8,
-            fontSize: 11,
-            color: "var(--muted-foreground, #94a3b8)",
+            borderTop: "1px solid var(--border, #e2e8f0)",
+            padding: "12px 32px",
+            background: "var(--card, #fff)",
           }}>
-            {availableAdapters.length > 1 && (
-              <select
-                value={selectedAdapter}
-                onChange={(e) => setSelectedAdapter(e.target.value)}
-                disabled={!!selectedThread}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "inherit",
-                  fontSize: "inherit",
-                  cursor: selectedThread ? "not-allowed" : "pointer",
-                  opacity: selectedThread ? 0.5 : 1,
-                }}
-              >
-                {availableAdapters.map((a) => (
-                  <option key={a.type} value={a.type}>{a.label}</option>
-                ))}
-              </select>
-            )}
-            {currentModels.length > 0 && (
-              <>
-                {availableAdapters.length > 1 && <span>/</span>}
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "inherit",
-                    fontSize: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
-                  {currentModels.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-              </>
-            )}
-            <span style={{ marginLeft: "auto" }}>Shift+Enter for new line</span>
+            <ChatInput
+              {...inputProps}
+              placeholder="Ask Paperclip anything..."
+            />
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1540,9 +1719,5 @@ export function ChatPage(_props: PluginPageProps) {
 // ---------------------------------------------------------------------------
 
 export function ChatSidebarPanel() {
-  return (
-    <div style={{ padding: 12, fontSize: 13, color: "var(--muted-foreground, #94a3b8)" }}>
-      Open Chat from the sidebar to start a conversation.
-    </div>
-  );
+  return null;
 }
