@@ -1,12 +1,134 @@
 import type { PluginPageProps } from "@paperclipai/plugin-sdk/ui";
-import { usePluginData, usePluginAction, useHostContext } from "@paperclipai/plugin-sdk/ui";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { usePluginData, usePluginAction, useHostContext, usePluginStream } from "@paperclipai/plugin-sdk/ui";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   ChatThread,
   ChatMessage,
   ChatSegment,
   ChatAdapterInfo,
+  ChatStreamEvent,
 } from "../types.js";
+
+// ---------------------------------------------------------------------------
+// Markdown link component — open links in new tab
+// ---------------------------------------------------------------------------
+
+const mdComponents: Record<string, React.ComponentType<any>> = {
+  a: ({ href, children, ...props }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+  ),
+};
+
+// ---------------------------------------------------------------------------
+// CHAT_STYLES — CSS animations, markdown prose, scrollbar styling
+// ---------------------------------------------------------------------------
+
+const CHAT_STYLES = `
+  .chat-msg-enter {
+    animation: chatMsgSlide 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes chatMsgSlide {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .chat-cursor::after {
+    content: "▊";
+    display: inline;
+    animation: cursorBlink 800ms steps(2) infinite;
+    color: var(--primary, #2563eb);
+    font-weight: 400;
+    margin-left: 1px;
+  }
+  @keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .chat-tool-pulse {
+    animation: toolPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes toolPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  .chat-input-glow:focus-within {
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3), 0 0 12px rgba(37, 99, 235, 0.08);
+  }
+  .chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
+    font-weight: 600;
+    margin-top: 1em;
+    margin-bottom: 0.4em;
+    line-height: 1.3;
+  }
+  .chat-markdown h1 { font-size: 1.15em; }
+  .chat-markdown h2 { font-size: 1.05em; }
+  .chat-markdown h3 { font-size: 0.95em; }
+  .chat-markdown p { margin: 0.4em 0; }
+  .chat-markdown ul, .chat-markdown ol { margin: 0.4em 0; padding-left: 1.5em; }
+  .chat-markdown ul { list-style-type: disc; }
+  .chat-markdown ol { list-style-type: decimal; }
+  .chat-markdown li { margin: 0.15em 0; }
+  .chat-markdown li::marker { color: rgba(100, 116, 139, 0.6); }
+  .chat-markdown code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.88em;
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .chat-markdown pre {
+    margin: 0.6em 0;
+    padding: 0.75em 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+    background: rgba(0, 0, 0, 0.2) !important;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+  }
+  .chat-markdown pre code {
+    padding: 0;
+    background: none;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  .chat-markdown a {
+    color: var(--primary, #2563eb);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .chat-markdown blockquote {
+    border-left: 2px solid rgba(0, 0, 0, 0.15);
+    padding-left: 0.75em;
+    margin: 0.5em 0;
+    color: rgba(100, 116, 139, 0.8);
+  }
+  .chat-markdown table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 0.9em;
+  }
+  .chat-markdown th, .chat-markdown td {
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    padding: 0.35em 0.6em;
+    text-align: left;
+  }
+  .chat-markdown th {
+    background: rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+  }
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chat-scroll::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.3);
+    border-radius: 2px;
+  }
+  .chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.5); }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-msg-enter { animation: none; }
+    .chat-cursor::after { animation: none; }
+    .chat-tool-pulse { animation: none; opacity: 1; }
+  }
+`;
 
 // ---------------------------------------------------------------------------
 // ChatPage — full-page chat interface rendered in the plugin page slot
@@ -21,6 +143,8 @@ export function ChatPage(_props: PluginPageProps) {
   const [selectedModel, setSelectedModel] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Bridge hooks
@@ -30,33 +154,59 @@ export function ChatPage(_props: PluginPageProps) {
   const { data: messages, refresh: refreshMessages } = usePluginData<ChatMessage[]>("messages", {
     threadId: selectedThreadId,
   });
-  const { data: adapters } = usePluginData<ChatAdapterInfo[]>("adapters", {});
+  const { data: adapters } = usePluginData<ChatAdapterInfo[]>("adapters", { companyId });
   const createThread = usePluginAction("createThread");
   const deleteThread = usePluginAction("deleteThread");
   const sendMessage = usePluginAction("sendMessage");
   const stopThread = usePluginAction("stopThread");
+
+  // SSE stream — subscribe to real-time events for the selected thread
+  const streamChannel = selectedThreadId ? `chat:${selectedThreadId}` : "";
+  const { events: streamEvents, connected: streamConnected } = usePluginStream<ChatStreamEvent>(
+    streamChannel,
+    { companyId: companyId ?? undefined },
+  );
 
   // Derived state
   const availableAdapters = adapters?.filter((a) => a.available) ?? [];
   const currentAdapter = availableAdapters.find((a) => a.type === selectedAdapter) ?? availableAdapters[0];
   const currentModels = currentAdapter?.models ?? [];
   const selectedThread = threads?.find((t) => t.id === selectedThreadId) ?? null;
-  const isStreaming = selectedThread?.status === "running";
+  const isStreaming = selectedThread?.status === "running" || sending;
 
-  // Auto-scroll on new messages
+  // Process stream events into live text
+  const lastProcessedCount = useRef(0);
+  useEffect(() => {
+    if (streamEvents.length <= lastProcessedCount.current) return;
+
+    const newEvents = streamEvents.slice(lastProcessedCount.current);
+    lastProcessedCount.current = streamEvents.length;
+
+    for (const evt of newEvents) {
+      if (evt.type === "text" && evt.text) {
+        setStreamingText((prev) => prev + evt.text);
+      }
+      if (evt.type === "thinking" && evt.text) {
+        setStreamingThinking((prev) => prev + evt.text);
+      }
+      if (evt.type === "title_updated") {
+        refreshThreads();
+      }
+      if (evt.type === "done") {
+        // Stream complete — refresh persisted messages and reset streaming state
+        refreshMessages();
+        refreshThreads();
+        setStreamingText("");
+        setStreamingThinking("");
+        lastProcessedCount.current = 0;
+      }
+    }
+  }, [streamEvents, refreshMessages, refreshThreads]);
+
+  // Auto-scroll on new messages or streaming text
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Poll for messages while streaming (until SSE bridge lands)
-  useEffect(() => {
-    if (!isStreaming || !selectedThreadId) return;
-    const interval = setInterval(() => {
-      refreshMessages();
-      refreshThreads();
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isStreaming, selectedThreadId, refreshMessages, refreshThreads]);
+  }, [messages, streamingText]);
 
   // Lock adapter on existing thread
   useEffect(() => {
@@ -72,6 +222,13 @@ export function ChatPage(_props: PluginPageProps) {
       setSelectedModel(currentModels[0]!.id);
     }
   }, [currentModels, selectedModel]);
+
+  // Reset streaming state when switching threads
+  useEffect(() => {
+    setStreamingText("");
+    setStreamingThinking("");
+    lastProcessedCount.current = 0;
+  }, [selectedThreadId]);
 
   // ── Handlers ────────────────────────────────────────────────────
 
@@ -111,6 +268,9 @@ export function ChatPage(_props: PluginPageProps) {
 
     setSending(true);
     setInput("");
+    setStreamingText("");
+    setStreamingThinking("");
+    lastProcessedCount.current = 0;
 
     try {
       await sendMessage({
@@ -131,6 +291,8 @@ export function ChatPage(_props: PluginPageProps) {
     if (!selectedThreadId) return;
     await stopThread({ threadId: selectedThreadId, companyId });
     refreshThreads();
+    setStreamingText("");
+    setStreamingThinking("");
   }, [selectedThreadId, companyId, stopThread, refreshThreads]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -144,6 +306,7 @@ export function ChatPage(_props: PluginPageProps) {
 
   return (
     <div style={{ display: "flex", height: "100%", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <style dangerouslySetInnerHTML={{ __html: CHAT_STYLES }} />
       {/* Thread sidebar */}
       <div style={{
         width: 240,
@@ -170,7 +333,7 @@ export function ChatPage(_props: PluginPageProps) {
             + New Chat
           </button>
         </div>
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div className="chat-scroll" style={{ flex: 1, overflow: "auto" }}>
           {threads?.map((thread) => (
             <div
               key={thread.id}
@@ -222,7 +385,7 @@ export function ChatPage(_props: PluginPageProps) {
       {/* Main chat area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Messages */}
-        <div style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
+        <div className="chat-scroll" style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
           {!selectedThreadId && (
             <div style={{
               display: "flex",
@@ -236,7 +399,7 @@ export function ChatPage(_props: PluginPageProps) {
             </div>
           )}
           {messages?.map((msg) => (
-            <div key={msg.id} style={{ marginBottom: 16 }}>
+            <div key={msg.id} className="chat-msg-enter" style={{ marginBottom: 16 }}>
               <div style={{
                 fontSize: 11,
                 fontWeight: 600,
@@ -247,14 +410,26 @@ export function ChatPage(_props: PluginPageProps) {
               }}>
                 {msg.role}
               </div>
-              <div style={{
-                fontSize: 14,
-                lineHeight: 1.6,
-                color: "var(--foreground, #1e293b)",
-                whiteSpace: "pre-wrap",
-              }}>
-                {msg.content}
-              </div>
+              {msg.role === "user" ? (
+                <div style={{
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "var(--foreground, #1e293b)",
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {msg.content}
+                </div>
+              ) : (
+                <div className="chat-markdown" style={{
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "var(--foreground, #1e293b)",
+                }}>
+                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {msg.content}
+                  </Markdown>
+                </div>
+              )}
               {/* Render tool segments */}
               {msg.metadata?.segments
                 ?.filter((s: ChatSegment) => s.kind === "tool")
@@ -286,6 +461,52 @@ export function ChatPage(_props: PluginPageProps) {
                 })}
             </div>
           ))}
+
+          {/* Live streaming content */}
+          {streamingThinking && (
+            <div style={{
+              marginBottom: 8,
+              padding: "8px 12px",
+              borderRadius: 6,
+              background: "var(--accent, #f1f5f9)",
+              fontSize: 12,
+              color: "var(--muted-foreground, #94a3b8)",
+              fontStyle: "italic",
+              whiteSpace: "pre-wrap",
+            }}>
+              {streamingThinking}
+            </div>
+          )}
+          {streamingText && (
+            <div className="chat-msg-enter" style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                color: "var(--muted-foreground, #94a3b8)",
+                marginBottom: 4,
+              }}>
+                assistant
+              </div>
+              <div className="chat-markdown chat-cursor" style={{
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: "var(--foreground, #1e293b)",
+              }}>
+                <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                  {streamingText}
+                </Markdown>
+              </div>
+            </div>
+          )}
+
+          {/* Waiting indicator (before first token) */}
+          {isStreaming && !streamingText && !streamingThinking && (
+            <div style={{ marginBottom: 16, color: "var(--muted-foreground, #94a3b8)", fontSize: 13 }}>
+              Thinking...
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
