@@ -123,6 +123,10 @@ const CHAT_STYLES = `
     border-radius: 2px;
   }
   .chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.5); }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
   @media (prefers-reduced-motion: reduce) {
     .chat-msg-enter { animation: none; }
     .chat-cursor::after { animation: none; }
@@ -354,6 +358,197 @@ function ActivityGroup({ segments, isLive }: { segments: ChatSegment[]; isLive: 
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// formatTime — relative time display
+// ---------------------------------------------------------------------------
+
+function formatTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MessageRow — renders a single persisted message
+// ---------------------------------------------------------------------------
+
+function MessageRow({ msg }: { msg: ChatMessage }) {
+  const isUser = msg.role === "user";
+  const storedSegments = msg.metadata?.segments;
+  const hasSegments = storedSegments && storedSegments.length > 0;
+
+  return (
+    <div className="chat-msg-enter" style={{
+      display: "flex",
+      gap: 12,
+      padding: "12px 16px",
+      background: isUser ? "rgba(0,0,0,0.02)" : "transparent",
+    }}>
+      <div style={{
+        width: 24,
+        height: 24,
+        borderRadius: 4,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 12,
+        fontWeight: 600,
+        flexShrink: 0,
+        marginTop: 2,
+        background: isUser ? "var(--primary, #2563eb)" : "rgba(37, 99, 235, 0.15)",
+        color: isUser ? "#fff" : "var(--primary, #2563eb)",
+      }}>
+        {isUser ? "Y" : "P"}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>
+            {isUser ? "You" : "Paperclip"}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>
+            {formatTime(msg.createdAt)}
+          </span>
+        </div>
+        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", opacity: 0.9, lineHeight: 1.6 }}>
+          {isUser ? (
+            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{msg.content}</p>
+          ) : hasSegments ? (
+            groupSegments(storedSegments).map((group, i) => {
+              if (group.type === "text") {
+                return (
+                  <div key={i} className="chat-markdown">
+                    <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{group.content}</Markdown>
+                  </div>
+                );
+              }
+              if (group.type === "activity") {
+                return <ActivityGroup key={i} segments={group.segments} isLive={false} />;
+              }
+              if (group.type === "error") {
+                return (
+                  <div key={i} style={{ margin: "4px 0", fontSize: 14, color: "#ef4444" }}>
+                    {group.content}
+                  </div>
+                );
+              }
+              return null;
+            })
+          ) : (
+            <div className="chat-markdown">
+              <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.content}</Markdown>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// StreamingMessage — renders the live assistant response
+// ---------------------------------------------------------------------------
+
+function StreamingMessage({
+  segments,
+  streamingText,
+  streamingThinking,
+  isActive,
+}: {
+  segments: ChatSegment[];
+  streamingText: string;
+  streamingThinking: string;
+  isActive: boolean;
+}) {
+  // Build a combined segment list from stored segments + live streaming text
+  const allSegments: ChatSegment[] = [...segments];
+  if (streamingThinking) {
+    allSegments.push({ kind: "thinking", content: streamingThinking });
+  }
+  if (streamingText) {
+    allSegments.push({ kind: "text", content: streamingText });
+  }
+
+  const grouped = groupSegments(allSegments);
+  const hasAnyContent = allSegments.length > 0;
+
+  // Find the last text group index for cursor placement
+  let lastTextIdx = -1;
+  for (let i = grouped.length - 1; i >= 0; i--) {
+    if (grouped[i].type === "text") { lastTextIdx = i; break; }
+  }
+
+  return (
+    <div className="chat-msg-enter" style={{
+      display: "flex",
+      gap: 12,
+      padding: "12px 16px",
+    }}>
+      <div style={{
+        width: 24,
+        height: 24,
+        borderRadius: 4,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 12,
+        fontWeight: 600,
+        flexShrink: 0,
+        marginTop: 2,
+        background: "rgba(37, 99, 235, 0.15)",
+        color: "var(--primary, #2563eb)",
+      }}>
+        P
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground, #1e293b)" }}>Paperclip</span>
+          <span style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", opacity: 0.6 }}>now</span>
+        </div>
+        <div style={{ fontSize: 14, color: "var(--foreground, #1e293b)", opacity: 0.9, lineHeight: 1.6 }}>
+          {!hasAnyContent && isActive && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted-foreground, #94a3b8)" }}>
+              <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>&#x27F3;</span>
+              <span style={{ fontSize: 12 }}>Thinking&#x2026;</span>
+            </div>
+          )}
+
+          {grouped.map((group, gi) => {
+            if (group.type === "text") {
+              const isLastText = gi === lastTextIdx && isActive;
+              return (
+                <div key={gi} className={`chat-markdown ${isLastText ? "chat-cursor" : ""}`}>
+                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{group.content}</Markdown>
+                </div>
+              );
+            }
+            if (group.type === "activity") {
+              return <ActivityGroup key={gi} segments={group.segments} isLive={isActive} />;
+            }
+            if (group.type === "error") {
+              return (
+                <div key={gi} style={{ margin: "4px 0", fontSize: 14, color: "#ef4444" }}>
+                  {group.content}
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -627,112 +822,30 @@ export function ChatPage(_props: PluginPageProps) {
             </div>
           )}
           {messages?.map((msg) => (
-            <div key={msg.id} className="chat-msg-enter" style={{ marginBottom: 16 }}>
-              <div style={{
-                fontSize: 11,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                color: msg.role === "user" ? "var(--primary, #2563eb)" : "var(--muted-foreground, #94a3b8)",
-                marginBottom: 4,
-              }}>
-                {msg.role}
-              </div>
-              {msg.role === "user" ? (
-                <div style={{
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: "var(--foreground, #1e293b)",
-                  whiteSpace: "pre-wrap",
-                }}>
-                  {msg.content}
-                </div>
-              ) : (
-                <div className="chat-markdown" style={{
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: "var(--foreground, #1e293b)",
-                }}>
-                  <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {msg.content}
-                  </Markdown>
-                </div>
-              )}
-              {/* Render tool segments */}
-              {msg.metadata?.segments
-                ?.filter((s: ChatSegment) => s.kind === "tool")
-                .map((seg: ChatSegment, i: number) => {
-                  if (seg.kind !== "tool") return null;
-                  return (
-                    <div key={i} style={{
-                      marginTop: 8,
-                      padding: "8px 12px",
-                      borderRadius: 6,
-                      background: "var(--accent, #f1f5f9)",
-                      fontSize: 12,
-                      fontFamily: "monospace",
-                    }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        {seg.name}
-                      </div>
-                      {seg.result && (
-                        <div style={{
-                          color: seg.isError ? "var(--destructive, #ef4444)" : "var(--muted-foreground, #94a3b8)",
-                          maxHeight: 120,
-                          overflow: "auto",
-                        }}>
-                          {seg.result}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
+            <MessageRow key={msg.id} msg={msg} />
           ))}
 
-          {/* Live streaming content */}
-          {streamingThinking && (
-            <div style={{
-              marginBottom: 8,
-              padding: "8px 12px",
-              borderRadius: 6,
-              background: "var(--accent, #f1f5f9)",
-              fontSize: 12,
-              color: "var(--muted-foreground, #94a3b8)",
-              fontStyle: "italic",
-              whiteSpace: "pre-wrap",
-            }}>
-              {streamingThinking}
-            </div>
-          )}
-          {streamingText && (
-            <div className="chat-msg-enter" style={{ marginBottom: 16 }}>
-              <div style={{
-                fontSize: 11,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                color: "var(--muted-foreground, #94a3b8)",
-                marginBottom: 4,
-              }}>
-                assistant
-              </div>
-              <div className="chat-markdown chat-cursor" style={{
-                fontSize: 14,
-                lineHeight: 1.6,
-                color: "var(--foreground, #1e293b)",
-              }}>
-                <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                  {streamingText}
-                </Markdown>
-              </div>
-            </div>
+          {/* Live streaming message */}
+          {isStreaming && (
+            <StreamingMessage
+              segments={[]}
+              streamingText={streamingText}
+              streamingThinking={streamingThinking}
+              isActive={true}
+            />
           )}
 
-          {/* Waiting indicator (before first token) */}
-          {isStreaming && !streamingText && !streamingThinking && (
-            <div style={{ marginBottom: 16, color: "var(--muted-foreground, #94a3b8)", fontSize: 13 }}>
-              Thinking...
+          {/* Idle, no content placeholder */}
+          {selectedThreadId && !isStreaming && (!messages || messages.length === 0) && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              color: "var(--muted-foreground, #94a3b8)",
+              fontSize: 14,
+            }}>
+              Send a message to get started
             </div>
           )}
           <div ref={messagesEndRef} />
