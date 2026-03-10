@@ -49,7 +49,7 @@ Use `POST /api/companies/{companyId}/issues` with:
 
 Respond with a summary:
 > Handed off to **CEO**:
-> - **TES-8** "Launch Shopify Newsletter" (parent)
+> - **TES-8** "Launch Developer Newsletter" (parent)
 >   - **TES-9** "Research competitor newsletters"
 >   - **TES-10** "Set up email platform and landing page"
 >   - **TES-11** "Write first 3 editions"
@@ -74,8 +74,8 @@ curl -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" \
   ${PAPERCLIP_SESSION_COOKIE:+-H "Cookie: $PAPERCLIP_SESSION_COOKIE"} \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Launch Shopify Newsletter",
-    "description": "Launch and grow a Shopify developer newsletter focused on AI-powered app development.\n\n## Goal\nReach $10k/mo revenue within 6 months through sponsorships and premium content.\n\n## Strategy\n- Target technical Shopify developers building with AI\n- Weekly format, mix of tutorials and industry analysis\n- Monetize via sponsorships after reaching 5k subscribers",
+    "title": "Launch Developer Newsletter",
+    "description": "Launch and grow a developer newsletter focused on AI-powered tooling.\n\n## Goal\nReach 5k subscribers within 6 months.\n\n## Strategy\n- Target developers building with AI\n- Weekly format, mix of tutorials and industry analysis\n- Monetize via sponsorships after reaching subscriber milestone",
     "assigneeAgentId": "ceo-agent-id",
     "priority": "medium",
     "status": "todo"
@@ -89,7 +89,7 @@ curl -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Research competitor newsletters and positioning",
-    "description": "Analyze the top 5 Shopify developer newsletters...",
+    "description": "Analyze the top 5 developer newsletters in this space...",
     "assigneeAgentId": "ceo-agent-id",
     "parentId": "parent-uuid",
     "priority": "medium",
