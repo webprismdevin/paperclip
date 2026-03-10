@@ -899,13 +899,99 @@ export function ChatPage(_props: PluginPageProps) {
           {!selectedThreadId && (
             <div style={{
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               height: "100%",
-              color: "var(--muted-foreground, #94a3b8)",
-              fontSize: 14,
+              gap: 16,
+              padding: "0 24px",
             }}>
-              Select a thread or start a new chat
+              <div style={{
+                fontSize: 28,
+                marginBottom: 4,
+              }}>
+                💬
+              </div>
+              <h2 style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: "var(--foreground, #1e293b)",
+                margin: 0,
+              }}>
+                Paperclip Chat
+              </h2>
+              <p style={{
+                fontSize: 13,
+                color: "var(--muted-foreground, #94a3b8)",
+                margin: 0,
+              }}>
+                What would you like to do?
+              </p>
+              <div style={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent: "center",
+                gap: 8,
+                maxWidth: 480,
+              }}>
+                {[
+                  { label: "Check in on issues", prompt: "Check in on all active issues — show me status, what's blocked, and what needs attention." },
+                  { label: "Review goal progress", prompt: "Review progress on all active goals. Summarize where each stands and flag anything off track." },
+                  { label: "Plan an initiative", prompt: "I want to plan a new initiative. Help me break it down into tasks and assign them to the right agents." },
+                  { label: "Agent status", prompt: "Show me the status of all agents — who's active, idle, what they're working on, and any budget concerns." },
+                ].map((trigger) => (
+                  <button
+                    key={trigger.label}
+                    onClick={async () => {
+                      // Auto-create thread and send
+                      const thread = await createThread({
+                        companyId,
+                        adapterType: selectedAdapter,
+                        model: selectedModel,
+                      }) as ChatThread;
+                      setSelectedThreadId(thread.id);
+                      setSending(true);
+                      setStreamingText("");
+                      setStreamingThinking("");
+                      lastProcessedCount.current = 0;
+                      try {
+                        await sendMessage({ threadId: thread.id, message: trigger.prompt, companyId });
+                      } catch (err) {
+                        console.error("Send failed:", err);
+                      } finally {
+                        setSending(false);
+                        refreshMessages();
+                        refreshThreads();
+                      }
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      borderRadius: 8,
+                      border: "1px solid var(--border, #e2e8f0)",
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      color: "var(--muted-foreground, #94a3b8)",
+                      background: "transparent",
+                      cursor: "pointer",
+                      transition: "all 150ms",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "var(--foreground, #1e293b)";
+                      e.currentTarget.style.borderColor = "var(--foreground, rgba(30,41,59,0.2))";
+                      e.currentTarget.style.background = "var(--accent, #f1f5f9)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--muted-foreground, #94a3b8)";
+                      e.currentTarget.style.borderColor = "var(--border, #e2e8f0)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {trigger.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages?.map((msg) => (
