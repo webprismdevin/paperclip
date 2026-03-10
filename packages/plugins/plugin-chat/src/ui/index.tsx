@@ -1052,6 +1052,85 @@ export function ChatPage(_props: PluginPageProps) {
                   </button>
                 ))}
               </div>
+              {/* Recent threads */}
+              {threads && threads.length > 0 && (
+                <div style={{ width: "100%", maxWidth: 480, marginTop: 16 }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 8,
+                    padding: "0 4px",
+                  }}>
+                    <p style={{
+                      fontSize: 11,
+                      color: "var(--muted-foreground, #94a3b8)",
+                      opacity: 0.5,
+                      fontWeight: 500,
+                      margin: 0,
+                    }}>
+                      Recent
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {threads.slice(0, 3).map((thread) => (
+                      <button
+                        key={thread.id}
+                        onClick={() => setSelectedThreadId(thread.id)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          borderRadius: 8,
+                          border: "1px solid var(--border, #e2e8f0)",
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          background: "transparent",
+                          cursor: "pointer",
+                          transition: "all 150ms",
+                          width: "100%",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--accent, #f1f5f9)";
+                          e.currentTarget.style.borderColor = "var(--foreground, rgba(30,41,59,0.1))";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.borderColor = "var(--border, #e2e8f0)";
+                        }}
+                      >
+                        <span style={{
+                          fontSize: 14,
+                          flexShrink: 0,
+                          color: "var(--muted-foreground, #94a3b8)",
+                          opacity: 0.4,
+                        }}>
+                          💬
+                        </span>
+                        <span style={{
+                          fontSize: 13,
+                          color: "var(--foreground, #1e293b)",
+                          opacity: 0.7,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flex: 1,
+                        }}>
+                          {thread.title || "New Chat"}
+                        </span>
+                        <span style={{
+                          fontSize: 10,
+                          color: "var(--muted-foreground, #94a3b8)",
+                          opacity: 0.3,
+                          flexShrink: 0,
+                        }}>
+                          {formatTime(thread.updatedAt)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {messages?.map((msg) => (
