@@ -589,6 +589,8 @@ export function ChatPage(_props: PluginPageProps) {
   const [selectedModel, setSelectedModel] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -606,6 +608,7 @@ export function ChatPage(_props: PluginPageProps) {
   const deleteThread = usePluginAction("deleteThread");
   const sendMessage = usePluginAction("sendMessage");
   const stopThread = usePluginAction("stopThread");
+  const updateThreadTitle = usePluginAction("updateThreadTitle");
 
   // SSE stream — subscribe to real-time events for the selected thread
   const streamChannel = selectedThreadId ? `chat:${selectedThreadId}` : "";
@@ -859,16 +862,55 @@ export function ChatPage(_props: PluginPageProps) {
               }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--foreground, #1e293b)",
-                }}>
-                  {thread.title}
-                </div>
+                {editingThreadId === thread.id ? (
+                  <input
+                    autoFocus
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={async () => {
+                      const trimmed = editingTitle.trim();
+                      if (trimmed && trimmed !== thread.title) {
+                        await updateThreadTitle({ threadId: thread.id, title: trimmed });
+                        refreshThreads();
+                      }
+                      setEditingThreadId(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      if (e.key === "Escape") setEditingThreadId(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      width: "100%",
+                      background: "transparent",
+                      border: "1px solid var(--border, #e2e8f0)",
+                      borderRadius: 4,
+                      padding: "1px 4px",
+                      color: "var(--foreground, #1e293b)",
+                      outline: "none",
+                    }}
+                  />
+                ) : (
+                  <div
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setEditingThreadId(thread.id);
+                      setEditingTitle(thread.title || "New Chat");
+                    }}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: "var(--foreground, #1e293b)",
+                    }}
+                  >
+                    {thread.title || "New Chat"}
+                  </div>
+                )}
                 <div style={{ fontSize: 10, color: "var(--muted-foreground, #94a3b8)", marginTop: 2 }}>
                   {thread.adapterType.replace("_local", "")} {thread.status === "running" ? "..." : ""}
                 </div>
