@@ -131,6 +131,234 @@ const CHAT_STYLES = `
 `;
 
 // ---------------------------------------------------------------------------
+// Segment grouping — collapses consecutive tool/thinking segments
+// ---------------------------------------------------------------------------
+
+type GroupedSegment =
+  | { type: "text"; content: string; index: number }
+  | { type: "error"; content: string; index: number }
+  | { type: "activity"; segments: ChatSegment[]; startIndex: number };
+
+function groupSegments(segments: ChatSegment[]): GroupedSegment[] {
+  const groups: GroupedSegment[] = [];
+  let activityBuf: ChatSegment[] = [];
+  let activityStart = 0;
+
+  const flushActivity = () => {
+    if (activityBuf.length > 0) {
+      groups.push({ type: "activity", segments: [...activityBuf], startIndex: activityStart });
+      activityBuf = [];
+    }
+  };
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg.kind === "tool" || seg.kind === "thinking") {
+      if (activityBuf.length === 0) activityStart = i;
+      activityBuf.push(seg);
+    } else if (seg.kind === "text") {
+      flushActivity();
+      groups.push({ type: "text", content: seg.content, index: i });
+    }
+  }
+  flushActivity();
+  return groups;
+}
+
+function summarizeTools(segments: ChatSegment[]): string {
+  const tools = segments.filter((s) => s.kind === "tool");
+  if (tools.length === 0) return "Thinking";
+  const counts = new Map<string, number>();
+  for (const t of tools) {
+    if (t.kind === "tool") counts.set(t.name, (counts.get(t.name) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  for (const [name, count] of counts) {
+    parts.push(count > 1 ? `${name} \u00d7${count}` : name);
+  }
+  return parts.join(", ");
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components — ThinkingBlock, ToolCallDetail, ActivityGroup
+// ---------------------------------------------------------------------------
+
+function ThinkingBlock({ content, isLive }: { content: string; isLive: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="chat-msg-enter" style={{ margin: "6px 0" }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 12,
+          color: "var(--muted-foreground, #94a3b8)",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          opacity: 0.6,
+        }}
+      >
+        <span style={{ fontSize: 10 }}>{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{isLive ? "Thinking\u2026" : "Thought process"}</span>
+        {isLive && <span className="chat-tool-pulse" style={{ color: "var(--primary, #2563eb)" }}>{"\u25CF"}</span>}
+      </button>
+      {expanded && (
+        <div style={{
+          marginTop: 4,
+          paddingLeft: 20,
+          fontSize: 12,
+          color: "var(--muted-foreground, #94a3b8)",
+          opacity: 0.5,
+          lineHeight: 1.6,
+          whiteSpace: "pre-wrap",
+          borderLeft: "2px solid var(--border, #e2e8f0)",
+          marginLeft: 6,
+        }}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallDetail({ seg, isLive }: { seg: Extract<ChatSegment, { kind: "tool" }>; isLive: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasResult = seg.result !== undefined;
+  return (
+    <div style={{ margin: "2px 0" }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 11,
+          color: "var(--muted-foreground, #94a3b8)",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "2px 0",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          opacity: 0.7,
+        }}
+      >
+        <span style={{ fontSize: 9 }}>{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{seg.name}</span>
+        {!hasResult && isLive && <span className="chat-tool-pulse" style={{ color: "#f59e0b", fontSize: 8 }}>{"\u25CF"}</span>}
+        {hasResult && seg.isError && <span style={{ color: "#ef4444", fontSize: 10 }}>{"\u2715"}</span>}
+        {hasResult && !seg.isError && <span style={{ color: "#22c55e", fontSize: 10 }}>{"\u2713"}</span>}
+      </button>
+      {expanded && (
+        <div style={{
+          marginLeft: 16,
+          fontSize: 11,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        }}>
+          {seg.input != null && (
+            <div style={{
+              padding: "4px 8px",
+              background: "rgba(0,0,0,0.06)",
+              borderRadius: 3,
+              marginBottom: 4,
+              maxHeight: 100,
+              overflow: "auto",
+              color: "var(--muted-foreground, #94a3b8)",
+            }}>
+              {typeof seg.input === "string" ? seg.input : JSON.stringify(seg.input, null, 2)}
+            </div>
+          )}
+          {seg.result && (
+            <div style={{
+              padding: "4px 8px",
+              background: seg.isError ? "rgba(239,68,68,0.08)" : "rgba(0,0,0,0.04)",
+              borderRadius: 3,
+              maxHeight: 120,
+              overflow: "auto",
+              color: seg.isError ? "#ef4444" : "var(--muted-foreground, #94a3b8)",
+            }}>
+              {seg.result}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityGroup({ segments, isLive }: { segments: ChatSegment[]; isLive: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const toolCount = segments.filter((s) => s.kind === "tool").length;
+  const hasErrors = segments.some((s) => s.kind === "tool" && (s as any).isError);
+  const allDone = segments
+    .filter((s) => s.kind === "tool")
+    .every((s) => (s as any).result !== undefined);
+  const activeTool = isLive
+    ? segments.filter((s) => s.kind === "tool").reverse().find((s) => (s as any).result === undefined)
+    : undefined;
+
+  return (
+    <div style={{ margin: "2px 0", opacity: 0.5 }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          color: "var(--muted-foreground, #94a3b8)",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "2px 0",
+          opacity: 0.8,
+        }}
+      >
+        <span style={{ fontSize: 9 }}>{expanded ? "\u25BC" : "\u25B6"}</span>
+        {isLive && activeTool && activeTool.kind === "tool" ? (
+          <span>
+            Running <span style={{ fontFamily: "monospace" }}>{activeTool.name}</span>
+            {toolCount > 1 && <span style={{ opacity: 0.6 }}>{" \u00B7 "}{toolCount} tools</span>}
+          </span>
+        ) : (
+          <span>
+            Used {toolCount} tool{toolCount !== 1 ? "s" : ""}
+            <span style={{ opacity: 0.5, marginLeft: 4 }}>{summarizeTools(segments)}</span>
+          </span>
+        )}
+        {isLive && !allDone && (
+          <span className="chat-tool-pulse" style={{ color: "#f59e0b", fontSize: 8 }}>{"\u25CF"}</span>
+        )}
+        {!isLive && hasErrors && (
+          <span style={{ color: "rgba(239,68,68,0.5)", fontSize: 10 }}>has errors</span>
+        )}
+      </button>
+      {expanded && (
+        <div style={{
+          marginLeft: 16,
+          marginTop: 2,
+          borderLeft: "1px solid var(--border, rgba(0,0,0,0.1))",
+          paddingLeft: 10,
+        }}>
+          {segments.map((seg, i) => {
+            if (seg.kind === "tool") {
+              return <ToolCallDetail key={i} seg={seg} isLive={isLive} />;
+            }
+            if (seg.kind === "thinking") {
+              return <ThinkingBlock key={i} content={seg.content} isLive={isLive && i === segments.length - 1} />;
+            }
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ChatPage — full-page chat interface rendered in the plugin page slot
 // ---------------------------------------------------------------------------
 
